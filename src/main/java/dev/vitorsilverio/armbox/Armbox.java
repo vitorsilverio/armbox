@@ -7,6 +7,7 @@ import dev.vitorsilverio.armbox.linux.LinuxGuest;
 import dev.vitorsilverio.armbox.loader.Elf32Image;
 import dev.vitorsilverio.armbox.loader.Elf32Loader;
 import dev.vitorsilverio.armbox.memory.GuestMemory;
+import dev.vitorsilverio.armbox.memory.GuestSegmentationFault;
 import dev.vitorsilverio.armjitter.arch.ArmArchitecture;
 import dev.vitorsilverio.armjitter.core.ArmCore;
 import dev.vitorsilverio.armjitter.core.CpuMode;
@@ -89,6 +90,27 @@ public final class Armbox {
             }
         } catch (GuestExitException exit) {
             return exit.exitCode();
+        } catch (GuestSegmentationFault fault) {
+            dumpRegisters(core, fault, hostLog);
+            return SEGFAULT_EXIT_CODE;
+        }
+    }
+
+    /// 128 + SIGSEGV(11), como um shell reportaria.
+    private static final int SEGFAULT_EXIT_CODE = 139;
+    private static final int LR_REGISTER = 14;
+
+    private static void dumpRegisters(ArmCore core, GuestSegmentationFault fault, PrintStream log) {
+        log.printf("armbox: %s%n", fault.getMessage());
+        log.printf("  pc=%08X lr=%08X sp=%08X cpsr=%08X%n",
+                core.programCounter(), core.register(LR_REGISTER),
+                core.register(SP_REGISTER), core.cpsr().get());
+        for (int i = 0; i < 13; i += 4) {
+            StringBuilder line = new StringBuilder("  ");
+            for (int r = i; r < Math.min(i + 4, 13); r++) {
+                line.append("r%-2d=%08X ".formatted(r, core.register(r)));
+            }
+            log.println(line.toString().stripTrailing());
         }
     }
 }

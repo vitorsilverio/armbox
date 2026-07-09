@@ -24,19 +24,31 @@ java -jar target/armbox-1.0-SNAPSHOT.jar [--interp|--check] <elf> [args...]
 
 O código de saída do processo é o `exit()` do guest.
 
-## Estado (fase 1)
+## Estado (fases 1 e 2 concluídas)
+
+**busybox estático (musl, armv5l) roda:** `echo`, `sh -c 'echo a; echo b'`,
+aritmética do shell, `uname` — em JIT, interpretado e no modo `--check`
+(zero divergências JIT×interpretador com código musl real).
 
 - Loader ELF32 `ET_EXEC` estático (PIE e dinâmico são rejeitados com mensagem clara).
 - Pilha inicial ABI: argc/argv/envp + auxv (AT_PHDR/PAGESZ/ENTRY/RANDOM/HWCAP/...).
 - kuser helpers (`0xFFFF0Fxx`): memory barrier, cmpxchg (não-SMP) e get_tls.
 - Syscalls: `exit, exit_group, read, write, writev, brk, mmap2 (anônimo), munmap,
-  open/openat/close/lseek/_llseek (somente leitura), fstat64 (stub), uname,
-  clock_gettime, gettimeofday, getpid/tid/uid/gid, rt_sigaction/rt_sigprocmask
-  (ignorados), cacheflush, set_tls`. Desconhecidas: log + `-ENOSYS`.
+  open/openat/close/lseek/_llseek (somente leitura), stat64/lstat64/fstat64, ioctl
+  (TCGETS/TIOCGWINSZ), getcwd, access/faccessat, fcntl64, uname, clock_gettime,
+  gettimeofday, getpid/tid/uid/gid, set*id (no-op), wait4 (-ECHILD),
+  rt_sigaction/rt_sigprocmask (ignorados), readlink (-EINVAL), cacheflush, set_tls`.
+  Desconhecidas: log + `-ENOSYS`.
+- Segfault do guest = dump de registradores + exit 139 (como um shell reportaria).
 - SMC coberto: a memória guest é envolvida por `InvalidationAwareAddressSpace`.
 
-Fase 2 (busybox): mmap de arquivo, ioctl(TCGETS), stubs de sinal restantes — ver a
-spec da task B4.0.
+**Limites atuais (fase 3 se houver demanda):** sem `fork`/`vfork`/`execve` — o shell
+roda builtins em processo, mas pipelines, subshells e comandos externos não; sem
+escrita em arquivos; sem `getdents64` (`ls`); sem entrega de sinais.
+
+**Armadilha documentada:** `TCGETS` escreve o termios do KERNEL (36 bytes), não o da
+libc (60) — escrever 60 estoura o buffer de pilha do chamador e o processo "retorna"
+para pc=0. Custou uma sessão de debug; ver `LinuxGuest.KERNEL_TERMIOS_SIZE`.
 
 ## Binários de teste
 
@@ -50,6 +62,12 @@ java -jar target/armbox-*.jar testdata/hello.elf   # → "hello from a real ELF"
 
 Os testes de integração também montam ELFs sintéticos em memória (instruções ARM
 codificadas à mão em `ArmboxIntegrationTest`), então `mvn test` funciona sem toolchain.
+
+`testdata/busybox-armv5l` é o build estático oficial de busybox.net (musl, ARMv5L):
+
+```powershell
+java -jar target/armbox-*.jar testdata/busybox-armv5l sh -c "echo a; echo b"
+```
 
 ## Compilação
 

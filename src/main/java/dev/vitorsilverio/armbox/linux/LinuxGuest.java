@@ -30,9 +30,17 @@ public final class LinuxGuest {
     private static final int UID = 1000;
     /// Região de mmap anônimo: alocador bump a partir daqui (fora do heap e da pilha).
     private static final int MMAP_BASE = 0x40000000;
-    /// `st_mode` fica neste offset no `struct stat64` do ARM.
+    // Offsets no `struct stat64` do ARM (arch/arm/include/uapi/asm/stat.h).
+    private static final int STAT64_SIZE = 104;
     private static final int STAT64_ST_MODE_OFFSET = 16;
+    private static final int STAT64_ST_NLINK_OFFSET = 20;
+    private static final int STAT64_ST_UID_OFFSET = 24;
+    private static final int STAT64_ST_GID_OFFSET = 28;
+    private static final int STAT64_ST_SIZE_OFFSET = 48;
+    private static final int STAT64_ST_BLKSIZE_OFFSET = 56;
     private static final int UTSNAME_FIELD_SIZE = 65;
+    /// `struct termios` do KERNEL ARM (4 flags de 32 bits + c_line + NCCS=19 c_cc).
+    private static final int KERNEL_TERMIOS_SIZE = 36;
 
     private final GuestMemory memory;
     private final InputStream stdin;
@@ -105,6 +113,19 @@ public final class LinuxGuest {
             case LinuxAbi.NR_LSEEK -> lseek(a0, a1, a2);
             case LinuxAbi.NR_LLSEEK -> llseek(a0, a1, a2, a3, a4);
             case LinuxAbi.NR_FSTAT64 -> fstat64(a0, a1);
+            case LinuxAbi.NR_STAT64, LinuxAbi.NR_LSTAT64 -> stat64(a0, a1);
+            case LinuxAbi.NR_IOCTL -> ioctl(a0, a1, a2);
+            case LinuxAbi.NR_GETCWD -> getcwd(a0, a1);
+            case LinuxAbi.NR_ACCESS -> access(a0);
+            case LinuxAbi.NR_FACCESSAT -> a0 == LinuxAbi.AT_FDCWD ? access(a1) : -LinuxAbi.ENOSYS;
+            case LinuxAbi.NR_READLINK, LinuxAbi.NR_READLINKAT -> -LinuxAbi.EINVAL; // nada é symlink
+            // fcntl64: F_GETFD/F_SETFD/F_GETFL/F_SETFL — flags não importam na fase 2.
+            case LinuxAbi.NR_FCNTL64 -> 0;
+            // Processo single-user: set*id para o próprio id é um no-op bem-sucedido.
+            case LinuxAbi.NR_SETUID16, LinuxAbi.NR_SETGID16,
+                 LinuxAbi.NR_SETUID32, LinuxAbi.NR_SETGID32 -> 0;
+            // Não há fork na fase 2 — nunca há filho para colher.
+            case LinuxAbi.NR_WAIT4 -> -LinuxAbi.ECHILD;
             case LinuxAbi.NR_UNAME -> uname(a0);
             case LinuxAbi.NR_CLOCK_GETTIME -> clockGettime(a1);
             case LinuxAbi.NR_GETTIMEOFDAY -> gettimeofday(a0);
@@ -258,20 +279,91 @@ public final class LinuxGuest {
         }
     }
 
-    /// Stub mínimo: zera o struct e preenche `st_mode` (tty para fds padrão, regular
-    /// para arquivos). Suficiente para a decisão de buffering da libc; refinar na fase 2.
-    private int fstat64(int fd, int statAddress) {
-        byte[] zeroed = new byte[104];
+    /// Preenche o essencial do `struct stat64` do ARM: modo, nlink, dono, tamanho e
+    /// blksize. O resto (tempos, inode real, rdev) fica zerado — suficiente para libc.
+    private void writeStat64(int statAddress, int mode, long size) {
+        byte[] zeroed = new byte[STAT64_SIZE];
         memory.writeBytes(statAddress, zeroed, 0, zeroed.length);
+        memory.write32(statAddress + STAT64_ST_MODE_OFFSET, mode);
+        memory.write32(statAddress + STAT64_ST_NLINK_OFFSET, 1);
+        memory.write32(statAddress + STAT64_ST_UID_OFFSET, UID);
+        memory.write32(statAddress + STAT64_ST_GID_OFFSET, UID);
+        memory.write32(statAddress + STAT64_ST_SIZE_OFFSET, (int) size);
+        memory.write32(statAddress + STAT64_ST_SIZE_OFFSET + 4, (int) (size >>> 32));
+        memory.write32(statAddress + STAT64_ST_BLKSIZE_OFFSET, GuestMemory.PAGE_SIZE);
+    }
+
+    private int fstat64(int fd, int statAddress) {
         if (fd >= LinuxAbi.STDIN_FD && fd <= LinuxAbi.STDERR_FD) {
-            memory.write32(statAddress + STAT64_ST_MODE_OFFSET, LinuxAbi.S_IFCHR_TTY);
+            writeStat64(statAddress, LinuxAbi.S_IFCHR_TTY, 0);
             return 0;
         }
-        if (openFiles.containsKey(fd)) {
-            memory.write32(statAddress + STAT64_ST_MODE_OFFSET, LinuxAbi.S_IFREG_RO);
-            return 0;
+        SeekableByteChannel channel = openFiles.get(fd);
+        if (channel == null) {
+            return -LinuxAbi.EBADF;
         }
-        return -LinuxAbi.EBADF;
+        try {
+            writeStat64(statAddress, LinuxAbi.S_IFREG_RO, channel.size());
+        } catch (IOException e) {
+            writeStat64(statAddress, LinuxAbi.S_IFREG_RO, 0);
+        }
+        return 0;
+    }
+
+    private int stat64(int pathAddress, int statAddress) {
+        Path path = Path.of(memory.readCString(pathAddress));
+        if (!Files.exists(path)) {
+            return -LinuxAbi.ENOENT;
+        }
+        try {
+            if (Files.isDirectory(path)) {
+                writeStat64(statAddress, LinuxAbi.S_IFDIR_RX, 0);
+            } else {
+                writeStat64(statAddress, LinuxAbi.S_IFREG_RO, Files.size(path));
+            }
+            return 0;
+        } catch (IOException e) {
+            return -LinuxAbi.EACCES;
+        }
+    }
+
+    private int ioctl(int fd, int request, int argAddress) {
+        if (fd > LinuxAbi.STDERR_FD && !openFiles.containsKey(fd)) {
+            return -LinuxAbi.EBADF;
+        }
+        return switch (request) {
+            // struct termios zerado: a libc só quer saber que É um tty. ATENÇÃO: o
+            // kernel escreve o termios DELE (36 bytes) — não os 60 do struct da libc;
+            // escrever mais estoura o buffer de pilha do chamador (pc=0).
+            case LinuxAbi.TCGETS -> {
+                byte[] termios = new byte[KERNEL_TERMIOS_SIZE];
+                memory.writeBytes(argAddress, termios, 0, termios.length);
+                yield fd <= LinuxAbi.STDERR_FD ? 0 : -LinuxAbi.ENOTTY;
+            }
+            case LinuxAbi.TIOCGWINSZ -> {
+                memory.write16(argAddress, LinuxAbi.TTY_ROWS);
+                memory.write16(argAddress + 2, LinuxAbi.TTY_COLS);
+                memory.write32(argAddress + 4, 0);
+                yield fd <= LinuxAbi.STDERR_FD ? 0 : -LinuxAbi.ENOTTY;
+            }
+            default -> {
+                hostLog.printf("armbox: ioctl 0x%X não implementado (ENOTTY)%n", request);
+                yield -LinuxAbi.ENOTTY;
+            }
+        };
+    }
+
+    private int getcwd(int buffer, int size) {
+        byte[] cwd = "/\0".getBytes(StandardCharsets.US_ASCII);
+        if (size < cwd.length) {
+            return -LinuxAbi.ERANGE;
+        }
+        memory.writeBytes(buffer, cwd, 0, cwd.length);
+        return cwd.length;
+    }
+
+    private int access(int pathAddress) {
+        return Files.exists(Path.of(memory.readCString(pathAddress))) ? 0 : -LinuxAbi.ENOENT;
     }
 
     // ── Memória ──────────────────────────────────────────────────────────────
