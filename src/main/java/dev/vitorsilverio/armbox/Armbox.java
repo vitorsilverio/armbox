@@ -51,8 +51,23 @@ public final class Armbox {
 
     /// Executa `elf` com os argumentos dados e devolve o código de saída do guest.
     ///
+    /// `argv[0]` deve ser o nome do programa (como no execve real). Equivalente a
+    /// {@link #run(byte[], List, List, Backend, ArmArchitecture, InputStream, OutputStream,
+    /// OutputStream, PrintStream)} com {@link ArmArchitecture#ARMV5TE} (comportamento
+    /// histórico do armbox, preservado sem mudança de assinatura).
+    public static int run(byte[] elf, List<String> argv, List<String> envp, Backend backend,
+                          InputStream stdin, OutputStream stdout, OutputStream stderr,
+                          PrintStream hostLog) {
+        return run(elf, argv, envp, backend, ArmArchitecture.ARMV5TE,
+                stdin, stdout, stderr, hostLog);
+    }
+
+    /// Executa `elf` com os argumentos dados na arquitetura ARM informada e devolve o
+    /// código de saída do guest.
+    ///
     /// `argv[0]` deve ser o nome do programa (como no execve real).
     public static int run(byte[] elf, List<String> argv, List<String> envp, Backend backend,
+                          ArmArchitecture architecture,
                           InputStream stdin, OutputStream stdout, OutputStream stderr,
                           PrintStream hostLog) {
         GuestMemory memory = new GuestMemory();
@@ -64,14 +79,14 @@ public final class Armbox {
 
         JitRuntime runtime = switch (backend) {
             case JIT -> JitRuntimeFactory.armThumb(
-                    BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, ArmArchitecture.ARMV5TE);
+                    BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
             case INTERPRETED -> JitRuntimeFactory.interpretedArmThumb(
-                    BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, ArmArchitecture.ARMV5TE);
+                    BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
             case CHECK -> JitRuntimeFactory.divergenceCheckingArmThumb(
-                    BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, ArmArchitecture.ARMV5TE);
+                    BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
         };
         AddressSpace bus = new InvalidationAwareAddressSpace(memory, runtime);
-        ArmCore core = new ArmCore(bus, guest.dispatcher(), ArmArchitecture.ARMV5TE);
+        ArmCore core = new ArmCore(bus, guest.dispatcher(), architecture);
         guest.attach(core);
 
         int stackPointer = InitialStack.build(memory, STACK_TOP, STACK_SIZE, argv, envp, image);
@@ -87,6 +102,17 @@ public final class Armbox {
         try {
             while (true) {
                 core.runBlocks(runtime, RUN_SLICE_BLOCKS);
+                // armbox é user-mode puro: não há temporizador nem controlador de IRQ (isso
+                // é infraestrutura de sistema completo, fora de escopo — ver B4.1). No Linux
+                // real, um WFI em modo usuário só estala o pipeline até o próximo tick do
+                // timer do kernel (tipicamente <10ms) e a execução do processo continua
+                // normalmente, sem qualquer exceção sendo entregue ao processo. `wake()` aqui
+                // reproduz esse efeito: acorda o core sem passar por `setInterruptLine`/vetor
+                // de exceção IRQ (que exigiriam uma tabela de vetores mapeada, que o guest
+                // user-mode não tem) — WFI vira, na prática, um no-op observável.
+                if (core.halted()) {
+                    core.wake();
+                }
             }
         } catch (GuestExitException exit) {
             return exit.exitCode();
