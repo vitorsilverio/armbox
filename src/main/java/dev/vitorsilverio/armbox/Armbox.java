@@ -16,6 +16,8 @@ import dev.vitorsilverio.armjitter.jit.JitRuntime;
 import dev.vitorsilverio.armjitter.jit.JitRuntimeFactory;
 import dev.vitorsilverio.armjitter.memory.AddressSpace;
 import dev.vitorsilverio.armjitter.memory.InvalidationAwareAddressSpace;
+import dev.vitorsilverio.armjitter.truffle.TruffleJitRuntimeFactory;
+import org.graalvm.nativeimage.ImageInfo;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -32,7 +34,12 @@ public final class Armbox {
         /// Interpretador IR (debug/oráculo).
         INTERPRETED,
         /// Executa JIT e interpretador em paralelo, abortando na primeira divergência.
-        CHECK
+        CHECK,
+        /// JIT com o backend Truffle (task A5) em vez do backend ASM. Único backend que
+        /// compila blocos em runtime dentro de um binário native-image — o ASM define
+        /// classes em runtime via `defineClass`, o que native-image não suporta (ver
+        /// {@link #run} para a rejeição explícita do backend ASM sob native-image).
+        TRUFFLE
     }
 
     private static final int BLOCK_CACHE_ENTRIES = 8192;
@@ -47,6 +54,22 @@ public final class Armbox {
     private static final int THUMB_ENTRY_BIT = 1;
 
     private Armbox() {
+    }
+
+    /// Recusa o backend ASM (`Backend#JIT`/`Backend#CHECK`) cedo e com mensagem clara quando
+    /// rodando dentro de um binário native-image (task A5, "Armadilhas"): `AsmCodeEmitter`
+    /// define classes em runtime via `defineClass`, algo que native-image não suporta —
+    /// sem esta checagem o binário quebraria mais tarde, no primeiro bloco quente, com um
+    /// erro obscuro de classloading. `Backend#TRUFFLE` é a alternativa correta sob
+    /// native-image (compila blocos em runtime via Graal/Truffle).
+    private static void rejectAsmUnderNativeImage() {
+        if (ImageInfo.inImageCode()) {
+            throw new UnsupportedOperationException(
+                    "backend ASM (JIT/CHECK) indisponivel sob native-image: AsmCodeEmitter "
+                            + "define classes em runtime (defineClass), que native-image nao "
+                            + "suporta. Use Armbox.Backend.TRUFFLE (--truffle na CLI) ou "
+                            + "Backend.INTERPRETED.");
+        }
     }
 
     /// Executa `elf` com os argumentos dados e devolve o código de saída do guest.
@@ -78,11 +101,20 @@ public final class Armbox {
         guest.setInitialBrk(image.initialBrk());
 
         JitRuntime runtime = switch (backend) {
-            case JIT -> JitRuntimeFactory.armThumb(
-                    BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
+            case JIT -> {
+                rejectAsmUnderNativeImage();
+                yield JitRuntimeFactory.armThumb(BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
+            }
             case INTERPRETED -> JitRuntimeFactory.interpretedArmThumb(
                     BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
-            case CHECK -> JitRuntimeFactory.divergenceCheckingArmThumb(
+            case CHECK -> {
+                // divergenceCheckingArmThumb roda o backend ASM em paralelo ao interpretador
+                // (ver JitRuntimeFactory) — mesma restrição do caso JIT sob native-image.
+                rejectAsmUnderNativeImage();
+                yield JitRuntimeFactory.divergenceCheckingArmThumb(
+                        BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
+            }
+            case TRUFFLE -> TruffleJitRuntimeFactory.truffleArmThumb(
                     BLOCK_CACHE_ENTRIES, HOT_THRESHOLD, architecture);
         };
         AddressSpace bus = new InvalidationAwareAddressSpace(memory, runtime);

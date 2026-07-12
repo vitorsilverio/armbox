@@ -12,6 +12,11 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Mesma versão do Truffle usada pelo módulo arm-jitter-truffle (A2/A4) e do
+             GraalVM instalado pelo usuário para a A5 (E:\graalvm-jdk-25.0.3+9.1). -->
+        <truffle.version>25.0.1</truffle.version>
+        <graal.sdk.version>25.0.3</graal.sdk.version>
+        <native.maven.plugin.version>0.11.1</native.maven.plugin.version>
     </properties>
 
     <dependencies>
@@ -19,6 +24,23 @@
             <groupId>dev.vitorsilverio</groupId>
             <artifactId>arm-jitter</artifactId>
             <version>1.0</version>
+        </dependency>
+        <!-- Backend Truffle (task A5): único backend que compila blocos em runtime dentro de
+             native-image (o backend ASM define classes em runtime, incompatível). -->
+        <dependency>
+            <groupId>dev.vitorsilverio</groupId>
+            <artifactId>arm-jitter-truffle</artifactId>
+            <version>1.0</version>
+        </dependency>
+        <!-- ImageInfo.inImageCode(): permite ao armbox detectar em runtime se está rodando
+             dentro de um binário native-image e recusar o backend ASM com mensagem clara
+             (armadilha da A5), em vez de estourar UnsupportedOperationException obscura do
+             ASM/`defineClass`. Biblioteca leve, funciona em qualquer JVM (devolve false fora
+             de native-image), por isso não é escopo=provided. -->
+        <dependency>
+            <groupId>org.graalvm.sdk</groupId>
+            <artifactId>nativeimage</artifactId>
+            <version>${graal.sdk.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -49,4 +71,43 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Task A5: `mvn -Pnative -DskipTests package` com JAVA_HOME apontando para o
+             GraalVM 25 (native-image só existe nessa distribuição, não no JBR do resto do
+             projeto). Ver tasks/trilha-a-truffle/RELATORIO-A5.md para os passos completos. -->
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>${native.maven.plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <mainClass>dev.vitorsilverio.armbox.Main</mainClass>
+                            <imageName>armbox</imageName>
+                            <buildArgs>
+                                <!-- Ativa a compilação em runtime (Graal) dentro do binário
+                                     nativo para o backend Truffle — sem isso o interpretador
+                                     Truffle roda sempre no tier frio (aceite #2 da A5). -->
+                                <buildArg>--enable-monitoring=jfr</buildArg>
+                                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                            </buildArgs>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

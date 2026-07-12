@@ -89,15 +89,27 @@ class ArmboxIntegrationTest {
         assertEquals(42, result.exitCode());
     }
 
+    /// Backend Truffle (task A5): mesmo padrão de {@link #helloWorldJit()}, mas com o
+    /// emissor {@code TruffleCodeEmitter} em vez do bytecode ASM — o backend que precisa
+    /// funcionar dentro de native-image (ASM não pode, ver `Armbox#rejectAsmUnderNativeImage`).
+    @Test
+    void helloWorldTruffle() {
+        Result result = run(HELLO, Armbox.Backend.TRUFFLE);
+        assertEquals("hello from armbox\n", result.stdout());
+        assertEquals(42, result.exitCode());
+    }
+
     @Test
     void kuserCmpxchgStoresOnMatch() {
         assertEquals(7, run(KUSER_CMPXCHG, Armbox.Backend.INTERPRETED).exitCode());
         assertEquals(7, run(KUSER_CMPXCHG, Armbox.Backend.JIT).exitCode());
+        assertEquals(7, run(KUSER_CMPXCHG, Armbox.Backend.TRUFFLE).exitCode());
     }
 
     @Test
     void setTlsRoundTripsThroughKuserGetTls() {
         assertEquals(42, run(KUSER_TLS, Armbox.Backend.INTERPRETED).exitCode());
         assertEquals(42, run(KUSER_TLS, Armbox.Backend.JIT).exitCode());
+        assertEquals(42, run(KUSER_TLS, Armbox.Backend.TRUFFLE).exitCode());
     }
 }

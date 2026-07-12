@@ -23,7 +23,8 @@ class RealElfTest {
     void realHelloElfPrintsAndExits() throws IOException {
         assumeTrue(Files.exists(HELLO_ELF), "testdata/hello.elf ausente — rode testdata/build-testdata.ps1");
         byte[] elf = Files.readAllBytes(HELLO_ELF);
-        for (Armbox.Backend backend : new Armbox.Backend[]{Armbox.Backend.INTERPRETED, Armbox.Backend.JIT}) {
+        for (Armbox.Backend backend : new Armbox.Backend[]{
+                Armbox.Backend.INTERPRETED, Armbox.Backend.JIT, Armbox.Backend.TRUFFLE}) {
             ByteArrayOutputStream stdout = new ByteArrayOutputStream();
             ByteArrayOutputStream stderr = new ByteArrayOutputStream();
             int exitCode = Armbox.run(elf, List.of("hello.elf"), List.of(), backend,
