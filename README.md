@@ -13,13 +13,14 @@ b4.0-runner-user-mode.md`) e o veículo de validação das trilhas de arquitetur
 
 ```bash
 mvn package
-java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=armv5te|armv6k] [--interp|--check] <elf> [args...]
+java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=armv5te|armv6k|thumb2] [--interp|--check] <elf> [args...]
 ```
 
 | Flag | Efeito |
 |------|--------|
 | `--arch=armv5te` (padrão) | `ArmArchitecture.ARMV5TE` — comportamento histórico do armbox, sem mudança |
 | `--arch=armv6k` | `ArmArchitecture.ARMV6K` — habilita extend/reverse/UMAAL, SIMD paralelo, PKH/SAT/USAD8, LDREX/STREX/CLREX, CPS/SETEND/WFI (B1.1-B1.6) |
+| `--arch=thumb2` | `ArmArchitecture.ARMV6K_THUMB2_PARTIAL` — ARMv6K mais o subconjunto Thumb-2 de 32 bits já implementado (infra de B2.1 + data-processing de B2.2: modified immediate com carry-out, MOVW/MOVT, ADD/SUB/ADR, forma registrador com shift incl. RRX). **Não** é o ARMv7-A completo — sem load/store 32-bit, branches/IT ou misc de 32 bits ainda (task B4.0.2) |
 | (padrão) | JIT bytecode JVM (`JitRuntimeFactory.armThumb`) |
 | `--interp` | Interpretador IR (debug/oráculo) |
 | `--check` | JIT e interpretador em paralelo, aborta na primeira divergência |
@@ -127,6 +128,44 @@ instrução nova, só uma sentinela do harness em si (`ArmV6TortureTest`).
 instrução ARMv6K nova — GCC raramente emite SIMD paralelo/UMAAL/LDREX sem intrínsecos)
 recompilado com `-march=armv6k`, provando que o toolchain aceita o alvo para código
 "normal" também. `hello.elf`/`hello.s` (ARMv5TE) continuam intocados.
+
+### Binário Thumb-2 (task B4.0.2)
+
+`B2.1` (infra) e `B2.2` (data-processing de 32 bits) foram implementados e testados
+inteiramente por equivalência Java (`Thumb2DataProcessingDecoderTest`) — nunca por um
+binário ELF real. Diferente de B4.0.1, a arquitetura `ARMV6K_THUMB2_PARTIAL` (com
+`ArmFeature.THUMB2` + `Thumb2DataProcessingDecoder`) não existia como preset público
+antes desta task — só como `ArmArchitecture.extending(...)` construído manualmente
+dentro de cada teste; agora vive em `ArmArchitecture.ARMV6K_THUMB2_PARTIAL` no
+arm-jitter, ao lado de `ARMV6K`.
+
+O nome deliberadamente **não** diz "THUMB2" sozinho nem "ARMv7": não é o ARMv7-A
+completo da task B3 (sem VFP/SDIV/UDIV), nem sequer o Thumb-2 completo do épico B2
+(faltam load/store 32-bit de B2.3, branches+IT de B2.4 e misc de B2.5 — mesmo já ✅ no
+índice de tasks, o Objetivo desta task B4.0.2 escopa só B2.1-B2.2; a convenção
+documentada no arm-jitter é acrescentar o `DecoderExtension` de cada B2.x nova ao
+preset conforme fecham).
+
+`testdata/thumb2-torture.s` cobre pelo menos um representante de cada grupo pedido:
+
+- modified immediate com carry-out (`ANDS`/`ADDS` com imediato rotacionado; `MVN`
+  via o alias `ORN`+`Rn=PC` de graça);
+- `MOVW`+`MOVT` compondo uma constante de 32 bits;
+- `ADD Rd,SP,#imm` (Rn=SP genérico) e `ADR` nas duas direções (Rn=PC, soma e
+  subtração — cobre os dois ramos `PLAIN_OP_ADD`/`PLAIN_OP_SUB`);
+- forma registrador com shift imediato (`ADD ...,LSL#n`) e `RRX` (só existe em
+  Thumb-2, sem equivalente Thumb-1).
+
+Escrito à mão em encoding Thumb-2 de 32 bits genuíno (`.syntax unified`, sufixo `.w`
+explícito nos casos ambíguos) — **só usa branches Thumb-1 de 16 bits** (`B`/`Bcc`
+curtos): `B.W`/`BL.W` de 32 bits são o grupo de branches/IT de B2.4, que este preset
+ainda não decodifica, e um branch de 32 bits no teste viraria `UNDEFINED`.
+
+```powershell
+java -jar target/armbox-*.jar --arch=thumb2 testdata/thumb2-torture.elf   # exit 0, "thumb2 torture: ok"
+java -jar target/armbox-*.jar --arch=thumb2 --interp testdata/thumb2-torture.elf
+java -jar target/armbox-*.jar --arch=thumb2 --check testdata/thumb2-torture.elf
+```
 
 ## Compilação
 

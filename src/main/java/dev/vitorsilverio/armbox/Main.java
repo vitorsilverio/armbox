@@ -8,7 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/// CLI: `armbox [--arch=armv5te|armv6k] [--interp|--check] <elf> [args...]`.
+/// CLI: `armbox [--arch=armv5te|armv6k|thumb2] [--interp|--check] <elf> [args...]`.
 public final class Main {
     private Main() {
     }
@@ -24,6 +24,7 @@ public final class Main {
                 architecture = switch (value) {
                     case "armv5te" -> ArmArchitecture.ARMV5TE;
                     case "armv6k" -> ArmArchitecture.ARMV6K;
+                    case "thumb2" -> ArmArchitecture.ARMV6K_THUMB2_PARTIAL;
                     default -> {
                         System.err.println("--arch desconhecido: " + value);
                         usage();
@@ -37,6 +38,7 @@ public final class Main {
                 switch (arg) {
                     case "--interp" -> backend = Armbox.Backend.INTERPRETED;
                     case "--check" -> backend = Armbox.Backend.CHECK;
+                    case "--truffle" -> backend = Armbox.Backend.TRUFFLE;
                     default -> {
                         System.err.println("opção desconhecida: " + arg);
                         usage();
@@ -63,7 +65,7 @@ public final class Main {
     }
 
     private static void usage() {
-        System.err.println("uso: armbox [--arch=armv5te|armv6k] [--interp|--check] <elf> [args...]");
+        System.err.println("uso: armbox [--arch=armv5te|armv6k|thumb2] [--interp|--check] <elf> [args...]");
         System.exit(2);
     }
 }

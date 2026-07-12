@@ -19,3 +19,17 @@ Write-Host "armv6k-torture-broken.elf gerado."
 & $gcc -nostdlib -static -march=armv6k "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\hello-armv6k.elf" "$PSScriptRoot\hello-armv6k.s"
 if ($LASTEXITCODE -ne 0) { throw "build do hello-armv6k.elf falhou" }
 Write-Host "hello-armv6k.elf gerado."
+
+# B4.0.2 — binário real Thumb-2 (--arch=thumb2), veja thumb2-torture.s para a lista de
+# grupos cobertos (subconjunto B2.1-B2.2: modified immediate com carry, MOVW/MOVT,
+# ADD/ADR com SP/PC, forma registrador com shift incl. RRX). -mthumb força o assembler
+# a começar em estado Thumb; -march=armv7-a é o menor alvo do devkitARM com Thumb-2
+# completo (ARMv6T2 introduziu Thumb-2, mas o devkitARM não expõe esse -march
+# diretamente — armv7-a é um superconjunto seguro para o subconjunto testado aqui).
+& $gcc -nostdlib -static -march=armv7-a -mthumb "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\thumb2-torture.elf" "$PSScriptRoot\thumb2-torture.s"
+if ($LASTEXITCODE -ne 0) { throw "build do thumb2-torture.elf falhou" }
+Write-Host "thumb2-torture.elf gerado."
+
+& $gcc -nostdlib -static -march=armv7-a -mthumb "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\thumb2-torture-broken.elf" "$PSScriptRoot\thumb2-torture-broken.s"
+if ($LASTEXITCODE -ne 0) { throw "build do thumb2-torture-broken.elf falhou" }
+Write-Host "thumb2-torture-broken.elf gerado."
