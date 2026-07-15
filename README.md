@@ -20,7 +20,7 @@ java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=armv5te|armv6k|thumb2] [--inter
 |------|--------|
 | `--arch=armv5te` (padrão) | `ArmArchitecture.ARMV5TE` — comportamento histórico do armbox, sem mudança |
 | `--arch=armv6k` | `ArmArchitecture.ARMV6K` — habilita extend/reverse/UMAAL, SIMD paralelo, PKH/SAT/USAD8, LDREX/STREX/CLREX, CPS/SETEND/WFI (B1.1-B1.6) |
-| `--arch=thumb2` | `ArmArchitecture.ARMV6K_THUMB2_PARTIAL` — ARMv6K mais o subconjunto Thumb-2 de 32 bits já implementado (infra de B2.1 + data-processing de B2.2: modified immediate com carry-out, MOVW/MOVT, ADD/SUB/ADR, forma registrador com shift incl. RRX). **Não** é o ARMv7-A completo — sem load/store 32-bit, branches/IT ou misc de 32 bits ainda (task B4.0.2) |
+| `--arch=thumb2` | `ArmArchitecture.ARMV6K_THUMB2` — ARMv6K mais o subconjunto Thumb-2 de 32 bits já implementado (infra de B2.1 + data-processing de B2.2: modified immediate com carry-out, MOVW/MOVT, ADD/SUB/ADR, forma registrador com shift incl. RRX). **Não** é o ARMv7-A completo — sem load/store 32-bit, branches/IT ou misc de 32 bits ainda (task B4.0.2) |
 | (padrão) | JIT bytecode JVM (`JitRuntimeFactory.armThumb`) |
 | `--interp` | Interpretador IR (debug/oráculo) |
 | `--check` | JIT e interpretador em paralelo, aborta na primeira divergência |
@@ -133,10 +133,10 @@ recompilado com `-march=armv6k`, provando que o toolchain aceita o alvo para có
 
 `B2.1` (infra) e `B2.2` (data-processing de 32 bits) foram implementados e testados
 inteiramente por equivalência Java (`Thumb2DataProcessingDecoderTest`) — nunca por um
-binário ELF real. Diferente de B4.0.1, a arquitetura `ARMV6K_THUMB2_PARTIAL` (com
+binário ELF real. Diferente de B4.0.1, a arquitetura `ARMV6K_THUMB2` (com
 `ArmFeature.THUMB2` + `Thumb2DataProcessingDecoder`) não existia como preset público
 antes desta task — só como `ArmArchitecture.extending(...)` construído manualmente
-dentro de cada teste; agora vive em `ArmArchitecture.ARMV6K_THUMB2_PARTIAL` no
+dentro de cada teste; agora vive em `ArmArchitecture.ARMV6K_THUMB2` no
 arm-jitter, ao lado de `ARMV6K`.
 
 O nome deliberadamente **não** diz "THUMB2" sozinho nem "ARMv7": não é o ARMv7-A

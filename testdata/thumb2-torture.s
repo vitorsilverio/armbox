@@ -1,7 +1,7 @@
 @ thumb2-torture.s — binário ELF real Thumb-2 32-bit auto-verificável (task B4.0.2).
 @
 @ Cobre o subconjunto Thumb-2 implementado até B2.1 (infra)/B2.2 (data-processing),
-@ que é exatamente o que o preset `ArmArchitecture.ARMV6K_THUMB2_PARTIAL` habilita
+@ que é exatamente o que o preset `ArmArchitecture.ARMV6K_THUMB2` habilita
 @ (ver arm-jitter `ArmArchitecture` — B2.3/B2.4/B2.5 NÃO estão nesta lista ainda,
 @ mesmo já ✅ no índice de tasks, porque o Objetivo desta task escopa só B2.1-B2.2):
 @   - modified immediate com carry-out (ANDS com imediato rotacionado; MVN via
@@ -71,7 +71,7 @@ _start:
     @ ── 1/2: ANDS com imediato rotacionado — ThumbExpandImm_C, carry-out=1 ────────
     @ MVN.W r1,#0 usa o alias ORN+Rn=PC (decodeModifiedImmediate) de graça.
     @ Extração do carry SEM MRS (fora de escopo desta task — MRS é B2.5/Thumb2MiscDecoder,
-    @ não está no preset ARMV6K_THUMB2_PARTIAL, que só registra Thumb2DataProcessingDecoder):
+    @ não está no preset ARMV6K_THUMB2, que só registra Thumb2DataProcessingDecoder):
     @ ADC (modified-immediate, S=0, mesma tabela op4 do decoder) lê o carry sem tocar flags —
     @ `adc r5, r6, #0` com r6=0 dá r5=C diretamente.
     mvn.w   r1, #0

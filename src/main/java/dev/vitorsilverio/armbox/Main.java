@@ -24,7 +24,7 @@ public final class Main {
                 architecture = switch (value) {
                     case "armv5te" -> ArmArchitecture.ARMV5TE;
                     case "armv6k" -> ArmArchitecture.ARMV6K;
-                    case "thumb2" -> ArmArchitecture.ARMV6K_THUMB2_PARTIAL;
+                    case "thumb2" -> ArmArchitecture.ARMV6K_THUMB2;
                     default -> {
                         System.err.println("--arch desconhecido: " + value);
                         usage();

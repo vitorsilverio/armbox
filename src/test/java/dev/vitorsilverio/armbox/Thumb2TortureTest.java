@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 ///
 /// `testdata/thumb2-torture.elf` (fonte: `testdata/thumb2-torture.s`) exercita o
 /// subconjunto Thumb-2 implementado até B2.1 (infra)/B2.2 (data-processing) — exatamente
-/// o que `ArmArchitecture.ARMV6K_THUMB2_PARTIAL` habilita: modified immediate com
+/// o que `ArmArchitecture.ARMV6K_THUMB2` habilita: modified immediate com
 /// carry-out, MOVW/MOVT, ADD/SUB Rd,SP/PC,#imm (ADR), forma registrador com shift
 /// imediato incl. RRX. Cada grupo se autoverifica e sai com um código de saída único
 /// por checagem se divergir; sucesso = exit 0.
@@ -37,7 +37,7 @@ class Thumb2TortureTest {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exitCode = Armbox.run(elf, List.of(elfPath.getFileName().toString()), List.of(), backend,
-                ArmArchitecture.ARMV6K_THUMB2_PARTIAL, new ByteArrayInputStream(new byte[0]), stdout, stderr,
+                ArmArchitecture.ARMV6K_THUMB2, new ByteArrayInputStream(new byte[0]), stdout, stderr,
                 new PrintStream(stderr, true, StandardCharsets.UTF_8));
         return new Result(exitCode, stdout.toString(StandardCharsets.UTF_8));
     }
