@@ -1,9 +1,6 @@
-@ thumb2-torture.s — binário ELF real Thumb-2 32-bit auto-verificável (task B4.0.2).
+@ thumb2-torture.s — binário ELF real Thumb-2 32-bit auto-verificável (tasks B4.0.2 + B2.6).
 @
-@ Cobre o subconjunto Thumb-2 implementado até B2.1 (infra)/B2.2 (data-processing),
-@ que é exatamente o que o preset `ArmArchitecture.ARMV6K_THUMB2` habilita
-@ (ver arm-jitter `ArmArchitecture` — B2.3/B2.4/B2.5 NÃO estão nesta lista ainda,
-@ mesmo já ✅ no índice de tasks, porque o Objetivo desta task escopa só B2.1-B2.2):
+@ B4.0.2 cobriu o subconjunto Thumb-2 até B2.1(infra)/B2.2(data-processing):
 @   - modified immediate com carry-out (ANDS com imediato rotacionado; MVN via
 @     alias ORN+Rn=PC também exercitado de graça)
 @   - carry aritmético normal (ADDS com imediato, sem relação com o carry-out do
@@ -15,23 +12,40 @@
 @   - forma registrador com shift imediato (ADD com LSL) e RRX (MOV via alias
 @     ORR+Rn=PC com shift RRX, que só existe em Thumb-2 — sem equivalente Thumb-1)
 @
+@ B2.6 (checagens 11-20) estende para o preset `ARMV6K_THUMB2` FECHADO — as 4
+@ extensões plugadas juntas (`Thumb2DataProcessingDecoder`/B2.2 acima,
+@ `Thumb2LoadStoreDecoder`/B2.3, `Thumb2BranchDecoder`/B2.4, `Thumb2MiscDecoder`/B2.5)
+@ e o fix do decode único de 32 bits para `BL`/`BLX` (o "fantasma" do sufixo deixa
+@ de existir):
+@   - LDR.W/STR.W (T3/T4) com writeback pré/pós-indexado
+@   - LDRD/STRD com par de registradores NÃO-adjacente (Rt=r2, Rt2=r9)
+@   - LDM.W/PUSH.W/POP.W (STMDB/LDMIA wide, confirmado via objdump)
+@   - DMB/DSB/ISB (sem efeito observável além de ciclo/fetch)
+@   - MRS/MSR de 32 bits (ida e volta do CPSR)
+@   - TBB (tabela de bytes, índice 2)
+@   - BL real entre funções, com um `.word 0xF890F890` logo depois de um `b` que
+@     pula por cima dele (bytes que colidiriam com o "fantasma" pré-B2.6 se o par
+@     BL/BLX fosse relido como dois halfwords independentes — o endereço de
+@     retorno real de um `bl`/`bx lr` não pode conter dados crus, daí o `b` skip)
+@
 @ IMPORTANTE (armadilha do enunciado): a escolha 16 vs 32 bits é do assembler, não
 @ do mnemônico. `.w` força a forma de 32 bits nos casos ambíguos; nos casos em que
 @ Thumb-1 simplesmente NÃO tem a instrução (ANDS/MVN/ADD-3-registrador-com-shift
-@ com imediato fora do range de 3 bits, MOVW/MOVT, RRX) o assembler já escolhe
-@ Thumb-2 sozinho, mas o `.w` foi mantido mesmo assim por clareza/documentação.
-@ CONFIRME com objdump -d antes de confiar neste arquivo (ver testdata/README ou o
-@ comentário no build-testdata.ps1) — thumb2-torture-encoding-check.txt documenta a
-@ verificação feita nesta task.
+@ com imediato fora do range de 3 bits, MOVW/MOVT, RRX, LDRD/STRD, TBB, DMB/DSB/ISB,
+@ MRS/MSR de 32 bits) o assembler já escolhe Thumb-2 sozinho, mas o `.w` foi mantido
+@ mesmo assim por clareza/documentação onde aplicável. CONFIRME com objdump -d antes
+@ de confiar neste arquivo (ver testdata/README ou o comentário no
+@ build-testdata.ps1).
 @
 @ Cada checagem compara o resultado real contra o esperado e, se divergir, sai com
-@ um código de saída ÚNICO (1..10) — identifica exatamente qual falhou. Sucesso =
+@ um código de saída ÚNICO (1..20) — identifica exatamente qual falhou. Sucesso =
 @ exit 0 com a mensagem "thumb2 torture: ok".
 @
-@ Só usa branches Thumb-1 de 16 bits (B/Bcc curtos) — B.W/BL.W de 32 bits são grupo
-@ de B2.4 (branches + IT), que este preset ainda NÃO decodifica; um branch de 32
-@ bits aqui viraria UNDEFINED. O arquivo é pequeno o bastante para caber dentro do
-@ alcance de ±2KB (B) e ±256B (Bcc) do Thumb-1 sem esforço.
+@ Só usa branches Thumb-1 de 16 bits (B/Bcc curtos) para o CONTROLE do torture test
+@ em si (macros CHECK32/CHECKREG, `fail`) — B.W de 32 bits condicional/incondicional
+@ já é testado em separado por `Thumb2BranchesItTest` no arm-jitter (equivalência
+@ ASM×interpretado). O arquivo é pequeno o bastante para caber dentro do alcance de
+@ ±2KB (B) e ±256B (Bcc) do Thumb-1 sem esforço.
     .syntax unified
     .arch armv7-a
     .thumb
@@ -121,6 +135,104 @@ _start:
     movs    r1, #2
     mov.w   r0, r1, rrx     @ (2>>>1) | (carry<<31) = 1 | 0x80000000
     CHECK32 r0, 0x80000001, 10
+
+    @ ══════════════════════════════════════════════════════════════════════════════
+    @ B2.6 — extensão do torture test: as 4 extensões Thumb-2 juntas no preset real
+    @ (Thumb2LoadStoreDecoder/B2.3, Thumb2BranchDecoder/B2.4, Thumb2MiscDecoder/B2.5,
+    @ além do Thumb2DataProcessingDecoder já exercitado acima) e o fix do "fantasma"
+    @ BL/BLX (decode único de 32 bits). Usa r8-r10 como scratch extra (não conflita
+    @ com r5/r6/r7 reservados acima).
+    @ ══════════════════════════════════════════════════════════════════════════════
+
+    .align 4
+scratch:
+    .word   0, 0, 0, 0
+
+    @ ── 11: STR.W (T4) com writeback pré-indexado, depois LDR.W (T3) confirma ─────
+    adr     r1, scratch
+    movs    r0, #0x42
+    str.w   r0, [r1, #4]!    @ escreve em scratch+4 e r1 vira scratch+4 (writeback)
+    ldr.w   r2, [r1]
+    CHECK32 r2, 0x42, 11
+
+    @ ── 12: LDR.W (T4) pós-indexado (offset negativo, sem writeback no T3) ────────
+    ldr.w   r3, [r1], #-4    @ lê de scratch+4 (mesmo endereço de 11), r1 volta a scratch
+    CHECKREG r3, r2, 12
+
+    @ ── 13: LDRD/STRD — par NÃO-adjacente (Rt=r2, Rt2=r9) ─────────────────────────
+    movs    r2, #0x11
+    movs    r9, #0x22
+    adr     r4, scratch
+    strd    r2, r9, [r4]
+    movs    r2, #0          @ limpa para provar que o load reconstitui
+    movs    r9, #0
+    ldrd    r2, r9, [r4]
+    CHECK32 r2, 0x11, 13
+    CHECK32 r9, 0x22, 14
+
+    @ ── 15: LDM.W / PUSH.W / POP.W (alias STMDB SP! / LDMIA SP!) ──────────────────
+    movs    r0, #7
+    movs    r1, #8
+    push.w  {r0, r1}
+    movs    r0, #0
+    movs    r1, #0
+    pop.w   {r0, r1}
+    CHECK32 r0, 7, 15
+    CHECK32 r1, 8, 16
+
+    @ ── 17: DMB/DSB/ISB — sem efeito observável além de consumir ciclo (G4) ───────
+    movs    r0, #0x99
+    dmb     sy
+    dsb     sy
+    isb     sy
+    CHECK32 r0, 0x99, 17
+
+    @ ── 18: MRS/MSR de 32 bits — ida e volta do CPSR sem trocar de modo ───────────
+    mrs     r0, cpsr
+    msr     cpsr_f, r0        @ só o campo de flags, não mexe em modo/interrupt mask
+    mrs     r1, cpsr
+    CHECKREG r0, r1, 18
+
+    @ ── 19: TBB — tabela de bytes, desvia para o índice usado (índice 2 -> +5*2) ──
+    adr     r0, tbb_table
+    movs    r1, #2
+    tbb     [r0, r1]
+tbb_table:
+    .byte   (tbb_miss - tbb_table) / 2
+    .byte   (tbb_miss - tbb_table) / 2
+    .byte   (tbb_hit  - tbb_table) / 2
+    .byte   0                          @ padding: mantém tbb_miss alinhado a halfword (Thumb)
+    .align  1
+tbb_miss:
+    mov     r0, #19
+    b       fail
+tbb_hit:
+
+    @ ── 20: BL real entre funções — e o "fantasma": um `.word` logo depois de um
+    @ `bl` cujos bytes colidiriam (bug pré-B2.6) com o espaço de
+    @ Thumb2LoadStoreDecoder (top8=0xF8) se o par prefixo/sufixo fosse relido como
+    @ dois halfwords independentes. O endereço IMEDIATAMENTE após o `bl` é o
+    @ endereço de retorno real da chamada — não pode conter dados crus (a CPU
+    @ tentaria executá-los ao retornar) — então o `.word` fica logo depois de um
+    @ `b` que pula por cima dele; o retorno do `bl` cai nesse `b`, não no `.word`.
+    @ Isso já basta para exercitar o caso: com o decode único de 32 bits (B2.6), o
+    @ `bl` consome exatamente 4 bytes atomicamente e nunca tenta decodificar o
+    @ segundo halfword isoladamente — o "fantasma" nunca existe, então é seguro ter
+    @ bytes com essa forma logo depois, ligados ou não.
+    movs    r4, #0
+    bl      helper
+    b       after_ghost_word
+    .word   0xF890F890        @ "dados" que colidiriam com o fantasma pré-B2.6
+after_ghost_word:
+    CHECK32 r4, 0x55, 20
+    b       after_helper_body  @ pula por cima do corpo de `helper`, que segue inline
+
+    .thumb_func
+helper:
+    movs    r4, #0x55
+    bx      lr
+
+after_helper_body:
 
     @ Tudo passou.
     mov     r0, #1

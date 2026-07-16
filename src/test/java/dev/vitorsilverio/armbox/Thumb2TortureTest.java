@@ -15,16 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-/// B4.0.2: valida Thumb-2 de verdade — binário ELF real (compilado pelo devkitARM,
-/// `testdata/build-testdata.ps1`), não só equivalência Java (`Thumb2DataProcessingDecoderTest`
-/// no arm-jitter). Pulado se os `.elf` não estiverem presentes.
+/// B4.0.2 (checagens 1-10) + B2.6 (checagens 11-20): valida Thumb-2 de verdade — binário ELF
+/// real (compilado pelo devkitARM, `testdata/build-testdata.ps1`), não só equivalência Java
+/// (`Thumb2DataProcessingDecoderTest`/`Thumb2LoadStoreDecoderTest`/`Thumb2BranchesItTest`/
+/// `Thumb2MiscDecoderTest` no arm-jitter). Pulado se os `.elf` não estiverem presentes.
 ///
-/// `testdata/thumb2-torture.elf` (fonte: `testdata/thumb2-torture.s`) exercita o
-/// subconjunto Thumb-2 implementado até B2.1 (infra)/B2.2 (data-processing) — exatamente
-/// o que `ArmArchitecture.ARMV6K_THUMB2` habilita: modified immediate com
-/// carry-out, MOVW/MOVT, ADD/SUB Rd,SP/PC,#imm (ADR), forma registrador com shift
-/// imediato incl. RRX. Cada grupo se autoverifica e sai com um código de saída único
-/// por checagem se divergir; sucesso = exit 0.
+/// `testdata/thumb2-torture.elf` (fonte: `testdata/thumb2-torture.s`) agora exercita o preset
+/// `ARMV6K_THUMB2` FECHADO por B2.6 — as 4 extensões de decoder de 32 bits juntas
+/// (data-processing, load/store, branches/IT, misc) e o fix do decode único de `BL`/`BLX`
+/// (checagem 20 inclui um `.word` colidente logo perto de um `bl` real, provando que o
+/// "fantasma" documentado em `ArmArchitecture`/`ThumbDecoder` não existe mais). Cada grupo se
+/// autoverifica e sai com um código de saída único por checagem se divergir; sucesso = exit 0.
 class Thumb2TortureTest {
     private static final Path TORTURE_ELF = Path.of("testdata", "thumb2-torture.elf");
     private static final Path TORTURE_BROKEN_ELF = Path.of("testdata", "thumb2-torture-broken.elf");
