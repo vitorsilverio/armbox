@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /// B4.0.4: TPIDRURO/TPIDRURW de CP15 via {@link dev.vitorsilverio.armbox.linux.ArmboxCp15},
 /// instalado só em arquiteturas >= ARMv6K (ver {@link Armbox#run}). Espelha os testes `KUSER_TLS`
@@ -47,11 +46,10 @@ class ArmboxCp15Test {
     };
 
     /// `mrc p15, 0, r0, c0, c0, 0` (MIDR/CPUID, fora do bloco de ID de thread) —
-    /// {@link dev.vitorsilverio.armbox.linux.ArmboxCp15} não atende esse registrador (pinado,
-    /// continua "não implementado"): ver a limitação documentada no javadoc de `ArmboxCp15` —
-    /// como `handles(15)` é `true`, o core não intercepta o acesso antes de chamar
-    /// `read`/`write`, então a única forma de não "engolir" o acesso é lançar, o que aparece
-    /// aqui como uma exceção Java não capturada saindo de {@link Armbox#run}.
+    /// {@link dev.vitorsilverio.armbox.linux.ArmboxCp15} não reivindica esse registrador no
+    /// predicado fino (B4.0.4.1): o core intercepta ANTES de chamar `read`/`write` e entrega uma
+    /// exceção ARM Undefined limpa ao guest, igual a um coprocessador ausente — sem vetor mapeado,
+    /// o armbox (user-mode puro) sai com {@link #SEGFAULT_EXIT_CODE}, não com uma exceção Java.
     private static final int[] OTHER_CP15_REGISTER_STAYS_UNDEFINED = {
             0xEE100F10, // mrc p15, 0, r0, c0, c0, 0
             0xE3A07001, // mov r7, #1        (NR_exit, nunca alcançado)
@@ -93,8 +91,8 @@ class ArmboxCp15Test {
     void unsupportedCp15RegisterStaysUndefined() {
         for (Armbox.Backend backend : new Armbox.Backend[]{
                 Armbox.Backend.INTERPRETED, Armbox.Backend.JIT, Armbox.Backend.TRUFFLE}) {
-            assertThrows(IllegalStateException.class,
-                    () -> run(OTHER_CP15_REGISTER_STAYS_UNDEFINED, backend, ArmArchitecture.ARMV6K),
+            assertEquals(SEGFAULT_EXIT_CODE,
+                    run(OTHER_CP15_REGISTER_STAYS_UNDEFINED, backend, ArmArchitecture.ARMV6K).exitCode(),
                     backend.name());
         }
     }

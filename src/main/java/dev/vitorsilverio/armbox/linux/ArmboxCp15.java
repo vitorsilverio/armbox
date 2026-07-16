@@ -13,20 +13,15 @@ import dev.vitorsilverio.armjitter.coprocessor.CoprocessorBus;
 /// helper e CP15 sempre concordam, sem campo duplicado. `TPIDRURW` (leitura/escrita em modo
 /// usuário, raramente usado por musl) é um campo próprio deste barramento.
 ///
-/// Qualquer combinação de `crn`/`crm`/`opcode2` fora do bloco de ID de thread — ou uma escrita em
-/// `TPIDRURO`, somente leitura em modo usuário no hardware real — lança
-/// `IllegalStateException`, o mesmo tipo/estilo que {@link CoprocessorBus#none()} já usa para
-/// acesso fora de contrato: `handles(15)` retornar `true` não pode "engolir" acessos que este
-/// barramento não implementa. **Limitação documentada**: diferente de `handles(15)==false` (que o
-/// core intercepta ANTES de chamar {@link #read}/{@link #write}, entregando uma exceção ARM
-/// Undefined limpa ao guest via `ArmCore#requestException`), uma vez que `handles` devolve
-/// `true` o contrato de {@link CoprocessorBus} não dá a esta classe acesso ao `ArmCore` nem a
-/// chance de sinalizar "PC mudou" para o executor — `IrSystemExecutor#executeCoprocessor` sempre
-/// devolve `false` (bloco continua) depois de chamar `read`/`write` quando `handles` é `true`.
-/// Por isso um registrador de CP15 não suportado aqui não pode replicar byte a byte a entrega de
-/// exceção Undefined ao código guest (redirecionar o PC para o vetor e continuar rodando o
-/// guest) — o melhor que este barramento pode fazer dentro do contrato é falhar alto (exceção
-/// Java não capturada), nunca devolver um valor inventado silenciosamente.
+/// Qualquer combinação de `crn`/`crm`/`opcode2` fora do bloco de ID de thread nunca chega a
+/// {@link #read}/{@link #write} em uso normal (B4.0.4.1): este barramento sobrepõe o predicado
+/// fino {@link CoprocessorBus#handles(int, int, int, int, int)} para reivindicar só
+/// `c13,c0,{2,3}` — para qualquer outro registrador o predicado fino devolve `false` e o core
+/// entrega a mesma exceção ARM Undefined que entregaria para um coprocessador ausente
+/// (`handles(15)` grosso continua `true`, mas deixou de ser o predicado consultado). `read`/
+/// `write` só lançam `IllegalStateException` se alcançados para um registrador não reivindicado
+/// pelo fino — o que só pode acontecer por um bug do executor (que deveria ter consultado o
+/// predicado fino antes de chamar), nunca em uso normal.
 public final class ArmboxCp15 implements CoprocessorBus {
     private static final int CP15 = 15;
 
@@ -49,6 +44,12 @@ public final class ArmboxCp15 implements CoprocessorBus {
     @Override
     public boolean handles(int coprocessor) {
         return coprocessor == CP15;
+    }
+
+    @Override
+    public boolean handles(int coprocessor, int opcode1, int crn, int crm, int opcode2) {
+        return coprocessor == CP15 && crn == CRN_THREAD_ID && crm == CRM_THREAD_ID
+                && (opcode2 == OPCODE2_TPIDRURO || opcode2 == OPCODE2_TPIDRURW);
     }
 
     @Override
@@ -75,7 +76,7 @@ public final class ArmboxCp15 implements CoprocessorBus {
 
     private static IllegalStateException unsupported(int crn, int crm, int opcode2) {
         return new IllegalStateException(
-                "CP15 register not implemented by armbox: crn=c%d crm=c%d opcode2=%d"
+                "bug: executor não consultou handles fino: crn=c%d crm=c%d opcode2=%d"
                         .formatted(crn, crm, opcode2));
     }
 }
