@@ -1,14 +1,15 @@
 @ armv6k-torture.s — binário ELF real ARMv6K auto-verificável (task B4.0.1).
 @
-@ Cobre pelo menos um representante de cada grupo de instrução novo de B1.1-B1.6:
+@ Cobre pelo menos um representante de cada grupo de instrução novo de B1.1-B1.7:
 @ extensão com rotação (SXTB/UXTAH), inversão de bytes + UMAAL, SIMD paralelo
 @ (SADD16/UQSUB8/UADD8+SEL), pack/sat/usad (PKHBT/SSAT/USAD8), monitor de
 @ exclusividade (LDREX/STREX/CLREX — sucesso E as DUAS formas de falha: sem
-@ LDREX prévio e via CLREX), e as instruções de sistema CPS/SETEND/WFI.
+@ LDREX prévio e via CLREX), as instruções de sistema CPS/SETEND/WFI, e o acesso
+@ desalinhado atravessado de ArmFeature.UNALIGNED_ACCESS (LDR/STR, B1.7).
 @
 @ Cada grupo compara o resultado real contra o valor esperado (mesmos vetores dos
 @ testes Java de equivalência ArmV6*Test) e, se divergir, sai com um código de saída
-@ ÚNICO por checagem (1..26) — identifica exatamente qual checagem falhou. Sucesso =
+@ ÚNICO por checagem (1..28) — identifica exatamente qual checagem falhou. Sucesso =
 @ exit 0. "Teste do teste": ArmV6TortureTest também roda um programa sintético com
 @ um valor esperado deliberadamente errado e confirma exit-code != 0.
 @
@@ -192,6 +193,19 @@ _start:
     CHECK32 r5, 0xAB, 25
     CHECK32 r6, 0xCD, 26
 
+    @ ── 27/28: acesso desalinhado atravessado (ArmFeature.UNALIGNED_ACCESS, B1.7) ─
+    @ bytes de unaligned_bytes: 11 22 33 44 55 — LDR no endereço+1 lê atravessado
+    @ (little-endian, byte a byte), NÃO rotacionado como em ARMv4T/v5TE; STR no
+    @ mesmo endereço+1 escreve atravessado e o round-trip confirma os bytes exatos.
+    ldr     r0, =unaligned_bytes
+    add     r0, r0, #1
+    ldr     r2, [r0]
+    CHECK32 r2, 0x55443322, 27
+    ldr     r1, =0xCAFEF00D
+    str     r1, [r0]
+    ldrb    r9, [r0]
+    CHECK32 r9, 0x0D, 28
+
     @ Tudo passou.
     mov     r0, #1
     adr     r1, msg
@@ -215,6 +229,9 @@ fail:
     .align  4
 atomic_var:
     .word   0x11111111
+unaligned_bytes:
+    .byte   0x11, 0x22, 0x33, 0x44, 0x55
+    .align  4
 msg:
     .ascii  "armv6k torture: ok\n"
 msg_end:
