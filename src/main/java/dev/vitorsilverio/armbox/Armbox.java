@@ -1,5 +1,6 @@
 package dev.vitorsilverio.armbox;
 
+import dev.vitorsilverio.armbox.linux.ArmboxCp15;
 import dev.vitorsilverio.armbox.linux.GuestExitException;
 import dev.vitorsilverio.armbox.linux.InitialStack;
 import dev.vitorsilverio.armbox.linux.KuserHelpers;
@@ -9,6 +10,7 @@ import dev.vitorsilverio.armbox.loader.Elf32Loader;
 import dev.vitorsilverio.armbox.memory.GuestMemory;
 import dev.vitorsilverio.armbox.memory.GuestSegmentationFault;
 import dev.vitorsilverio.armjitter.arch.ArmArchitecture;
+import dev.vitorsilverio.armjitter.arch.ArmFeature;
 import dev.vitorsilverio.armjitter.core.ArmCore;
 import dev.vitorsilverio.armjitter.core.CpuMode;
 import dev.vitorsilverio.armjitter.decoder.InstructionSet;
@@ -119,6 +121,14 @@ public final class Armbox {
         };
         AddressSpace bus = new InvalidationAwareAddressSpace(memory, runtime);
         ArmCore core = new ArmCore(bus, guest.dispatcher(), architecture);
+        // TPIDRURO/TPIDRURW (B4.0.4): só arquiteturas >= ARMv6K têm esses registradores de CP15
+        // no hardware real. `EXTEND_ROTATE` é uma feature introduzida em ARMV6K (arbitrária entre
+        // as suas, só usada aqui como marcador de "é v6k ou estende v6k") e ausente em ARMV5TE —
+        // ARMV5TE fica sem barramento nenhum, comportamento inalterado (MRC/MCR de CP15 vira
+        // Undefined como hoje).
+        if (architecture.has(ArmFeature.EXTEND_ROTATE)) {
+            core.setCoprocessorBus(new ArmboxCp15(memory));
+        }
         guest.attach(core);
 
         int stackPointer = InitialStack.build(memory, STACK_TOP, STACK_SIZE, argv, envp, image);
