@@ -33,3 +33,22 @@ Write-Host "thumb2-torture.elf gerado."
 & $gcc -nostdlib -static -march=armv7-a -mthumb "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\thumb2-torture-broken.elf" "$PSScriptRoot\thumb2-torture-broken.s"
 if ($LASTEXITCODE -ne 0) { throw "build do thumb2-torture-broken.elf falhou" }
 Write-Host "thumb2-torture-broken.elf gerado."
+
+# B3.7 — preset ARMv7-A (--arch=armv7a): armv7a-torture.s cobre inteiro v7 (B3.1/B3.2:
+# MOVW/MOVT, bitfield, RBIT, MLS, SDIV/UDIV, DMB) + VFP (B3.3-B3.6: VMOV imediato,
+# transferencia core<->S/D, VADD/VMUL/VDIV/VSQRT, VCMP+VMRS, VCVT, VLDR/VSTR,
+# VPUSH/VPOP). hello-float.c e o unico testdata em C do repo, mas segue o MESMO padrao
+# bare-metal dos demais (-nostdlib, sem CRT/libc/libgcc, syscalls cruas via svc) --
+# ver o comentario no topo do .c para o motivo (evita de proposito o risco de NEON de
+# uma libc pre-compilada, citado na armadilha da task).
+& $gcc -nostdlib -static -march=armv7ve -mfpu=vfpv3-d16 "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\armv7a-torture.elf" "$PSScriptRoot\armv7a-torture.s"
+if ($LASTEXITCODE -ne 0) { throw "build do armv7a-torture.elf falhou" }
+Write-Host "armv7a-torture.elf gerado."
+
+& $gcc -nostdlib -static -march=armv7ve -mfpu=vfpv3-d16 "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\armv7a-torture-broken.elf" "$PSScriptRoot\armv7a-torture-broken.s"
+if ($LASTEXITCODE -ne 0) { throw "build do armv7a-torture-broken.elf falhou" }
+Write-Host "armv7a-torture-broken.elf gerado."
+
+& $gcc -nostdlib -static -march=armv7-a -mfpu=vfp -mfloat-abi=hard -O2 "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\hello-float.elf" "$PSScriptRoot\hello-float.c"
+if ($LASTEXITCODE -ne 0) { throw "build do hello-float.elf falhou" }
+Write-Host "hello-float.elf gerado."

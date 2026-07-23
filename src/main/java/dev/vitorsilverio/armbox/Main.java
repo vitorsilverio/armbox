@@ -8,7 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/// CLI: `armbox [--arch=armv5te|armv6k|thumb2] [--interp|--check] <elf> [args...]`.
+/// CLI: `armbox [--arch=armv5te|armv6k|thumb2|armv7a] [--interp|--check] <elf> [args...]`.
 public final class Main {
     private Main() {
     }
@@ -25,6 +25,7 @@ public final class Main {
                     case "armv5te" -> ArmArchitecture.ARMV5TE;
                     case "armv6k" -> ArmArchitecture.ARMV6K;
                     case "thumb2" -> ArmArchitecture.ARMV6K_THUMB2;
+                    case "armv7a" -> ArmArchitecture.ARMV7A;
                     default -> {
                         System.err.println("--arch desconhecido: " + value);
                         usage();
@@ -65,7 +66,7 @@ public final class Main {
     }
 
     private static void usage() {
-        System.err.println("uso: armbox [--arch=armv5te|armv6k|thumb2] [--interp|--check] <elf> [args...]");
+        System.err.println("uso: armbox [--arch=armv5te|armv6k|thumb2|armv7a] [--interp|--check] <elf> [args...]");
         System.exit(2);
     }
 }
