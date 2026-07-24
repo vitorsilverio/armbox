@@ -81,3 +81,12 @@ Write-Host "hello-cortexm.elf gerado."
 & $gcc -nostdlib -static -march=armv7-a -mthumb -Os "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\hello-thumb2.elf" "$PSScriptRoot\hello-thumb2.c"
 if ($LASTEXITCODE -ne 0) { throw "build do hello-thumb2.elf falhou" }
 Write-Host "hello-thumb2.elf gerado."
+
+# B6.2 -- AArch64 (--arch=aarch64): hello-aarch64.s escrito a mao (svc write+exit cruas, sem
+# libc), montado com o toolchain bare-metal aarch64-none-elf (devkitA64) -- serve para gerar um
+# ELF64 estatico normal (EM_AARCH64/ET_EXEC) mesmo sem alvo Linux, ja que o binario nao usa
+# nenhum runtime/CRT do toolchain (so instrucoes cruas + svc #0).
+$gccAarch64 = "C:\devkitPro\devkitA64\bin\aarch64-none-elf-gcc.exe"
+& $gccAarch64 -nostdlib -static "-Wl,-Ttext=0x400000" -o "$PSScriptRoot\hello-aarch64.elf" "$PSScriptRoot\hello-aarch64.s"
+if ($LASTEXITCODE -ne 0) { throw "build do hello-aarch64.elf falhou" }
+Write-Host "hello-aarch64.elf gerado."
