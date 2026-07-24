@@ -173,6 +173,50 @@ java -jar target/armbox-*.jar --arch=thumb2 --interp testdata/thumb2-torture.elf
 java -jar target/armbox-*.jar --arch=thumb2 --check testdata/thumb2-torture.elf
 ```
 
+### Binário de compilador Thumb-2 completo (task B4.0.3)
+
+Nível N3 da matriz (`docs/VALIDACAO-ARQUITETURAS.md` do arm-jitter) para Thumb-2: código
+que nós não escrevemos à mão, com a malícia real de um compilador — load/store de 32
+bits, tabela `TBB` e `IT` blocks à vontade.
+
+`testdata/hello-thumb2.c` é `gcc` real (`-march=armv7-a -mthumb -Os -nostdlib -static`,
+ver o comentário no topo do `.c`): um struct com bitfields (`UBFX`/`SBFX`/`STRH`), `STRD`
+explícito, um switch denso que o gcc compila para `TBB`, e um qsort pequeno e recursivo
+(`IT` blocks + cmp/branches curtos). Roda com `--arch=armv7a`, **não** `--arch=thumb2` —
+o struct com bitfields obriga `UBFX`/`SBFX`, que só o preset `ARMV7A` decodifica em
+Thumb-2 (`ArmFeature.BIT_FIELD`; `ARMV6K_THUMB2` não tem essa feature, decisão do épico
+B3), mesmo fallback previsto pela própria task quando o binário usa algo v7-only.
+`objdump -d` confirma `ldr.w`/`strd`/`ldmia.w`/`tbb`/`it`(`e`)/`bl` no binário, e a
+ausência de `sdiv`/`udiv`/`movw`/`movt`/`bfi`/`dmb` (só `ubfx`/`sbfx`, daí o fallback).
+
+```powershell
+java -jar target/armbox-*.jar --arch=armv7a testdata/hello-thumb2.elf         # checksum hex + exit 0
+java -jar target/armbox-*.jar --arch=armv7a --interp testdata/hello-thumb2.elf
+java -jar target/armbox-*.jar --arch=armv7a --check testdata/hello-thumb2.elf
+```
+
+**Achado real desta task**: o preset público `ArmArchitecture.ARMV7A` (arm-jitter) tinha
+um bug de fiação — `Thumb2DataProcessingDecoder`/`Thumb2RegisterDataProcessingDecoder`/
+`Thumb2MultiplyDecoder` recebiam `ARMV6K_THUMB2_FEATURES` (sem `BIT_FIELD`/
+`BIT_REVERSE`/`MLS_MULTIPLY`/`DIVIDE`) no construtor em vez de `ARMV7A_FEATURES`, então
+`UBFX`/`SBFX`/`RBIT`/`SDIV`/`UDIV`/`MLS` em encoding **Thumb-2** viravam `UNDEFINED`
+mesmo com o preset `ARMV7A` tendo as features certas — o encoding ARM clássico nunca
+teve esse bug (usa a `architecture` real, não uma cópia guardada no construtor).
+Corrigido no arm-jitter; ver o javadoc de `ArmArchitecture.ARMV7A` e o teste de
+regressão `ArmV7aThumb2PresetIntegrationTest` (decodifica contra o preset PÚBLICO, não
+um preset sintético de teste — é o que teria pego esse bug antes).
+
+**Busybox Thumb-2 (item 3 da task, NÃO fechado nesta sessão)**: a task pede um busybox
+estático compilado em Thumb-2, baixado ou buildado. Não há binário pré-compilado em
+Thumb-2 nos releases oficiais de busybox.net (só ARM mode, uclibc-static, ver
+`testdata/busybox-armv5l`). Buildar da fonte exige um toolchain `arm-linux-*` (musl/
+glibc) real — os cross-toolchains Linux do musl.cc (`armv7l-linux-musleabihf-cross`,
+por exemplo) são binários ELF Linux, não rodam neste ambiente Windows/MSYS2 (sem WSL
+com uma distro completa configurada); o devkitARM instalado é bare-metal
+(`arm-none-eabi`, sem libc de userspace Linux), não serve para linkar busybox. Fica
+pendente para uma sessão com um toolchain `arm-linux-*` real disponível (ex.: WSL com
+uma distro Linux configurada, ou um cross-toolchain Windows-hosted).
+
 ### Modo bare-metal Cortex-M (task B7.5)
 
 `--machine=cortex-m` é um segundo modo de máquina, ao lado do `linux-user` de sempre:

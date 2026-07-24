@@ -71,3 +71,13 @@ Write-Host "cortexm-torture-m0.elf gerado."
 & $gcc -nostdlib -static -mcpu=cortex-m3 -mthumb -T "$PSScriptRoot\flash.ld" -O2 -o "$PSScriptRoot\hello-cortexm.elf" "$PSScriptRoot\hello-cortexm.c"
 if ($LASTEXITCODE -ne 0) { throw "build do hello-cortexm.elf falhou" }
 Write-Host "hello-cortexm.elf gerado."
+
+# B4.0.3 — binario de compilador real Thumb-2 sob o preset ARMV6K_THUMB2 (--arch=thumb2).
+# hello-thumb2.c usa struct com bitfields, o que o gcc compila para UBFX/SBFX (media v7) mesmo
+# sob -march=armv6t2 -- por isso a task manda cair no caminho de fallback documentado nela:
+# -march=armv7-a -mthumb (superset seguro), rodando com --arch=armv7a (nao --arch=thumb2), ja
+# que ARMV6K_THUMB2 nao tem BIT_FIELD (so ARMV7A tem, decisao do epico B3). objdump confirma
+# ldr.w/strd/ldmia.w/tbb/it/bl (ver README) e ausencia de sdiv/udiv/movw/movt/bfi/dmb.
+& $gcc -nostdlib -static -march=armv7-a -mthumb -Os "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\hello-thumb2.elf" "$PSScriptRoot\hello-thumb2.c"
+if ($LASTEXITCODE -ne 0) { throw "build do hello-thumb2.elf falhou" }
+Write-Host "hello-thumb2.elf gerado."
