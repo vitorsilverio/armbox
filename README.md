@@ -13,7 +13,7 @@ b4.0-runner-user-mode.md`) e o veículo de validação das trilhas de arquitetur
 
 ```bash
 mvn package
-java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=armv5te|armv6k|thumb2] [--interp|--check] <elf> [args...]
+java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=...] [--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] <elf|bin> [args...]
 ```
 
 | Flag | Efeito |
@@ -21,14 +21,20 @@ java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=armv5te|armv6k|thumb2] [--inter
 | `--arch=armv5te` (padrão) | `ArmArchitecture.ARMV5TE` — comportamento histórico do armbox, sem mudança |
 | `--arch=armv6k` | `ArmArchitecture.ARMV6K` — habilita extend/reverse/UMAAL, SIMD paralelo, PKH/SAT/USAD8, LDREX/STREX/CLREX, CPS/SETEND/WFI (B1.1-B1.6) |
 | `--arch=thumb2` | `ArmArchitecture.ARMV6K_THUMB2` — ARMv6K mais o subconjunto Thumb-2 de 32 bits já implementado (infra de B2.1 + data-processing de B2.2: modified immediate com carry-out, MOVW/MOVT, ADD/SUB/ADR, forma registrador com shift incl. RRX). **Não** é o ARMv7-A completo — sem load/store 32-bit, branches/IT ou misc de 32 bits ainda (task B4.0.2) |
+| `--arch=armv7a` | `ArmArchitecture.ARMV7A` — inteiro v7 completo + VFPv2 (épico B3) |
+| `--arch=armv6m` / `--arch=armv7m` | `ArmArchitecture.ARMV6M`/`ARMV7M` — perfil Cortex-M (épico B7); exige `--machine=cortex-m` |
+| `--machine=linux-user` (padrão) | modo de sempre: ELF Linux + syscalls (ver seções abaixo) |
+| `--machine=cortex-m` | bare-metal Cortex-M (task B7.5, ver seção própria) — exige `--arch=armv6m` ou `armv7m` |
+| `--ram-size=N` | só `--machine=cortex-m`: tamanho da RAM em `0x20000000` em bytes (default 1 MiB) |
 | (padrão) | JIT bytecode JVM (`JitRuntimeFactory.armThumb`) |
 | `--interp` | Interpretador IR (debug/oráculo) |
 | `--check` | JIT e interpretador em paralelo, aborta na primeira divergência |
 
-`--arch` é processado antes de `--interp`/`--check` e antes do caminho do ELF; os dois
-podem ser combinados: `--arch=armv6k --check testdata/armv6k-torture.elf`.
+`--arch`/`--machine`/`--ram-size` são processados antes de `--interp`/`--check` e antes
+do caminho do arquivo; podem ser combinados: `--arch=armv6k --check testdata/armv6k-torture.elf`.
 
-O código de saída do processo é o `exit()` do guest.
+O código de saída do processo é o `exit()` do guest (`--machine=linux-user`) ou o
+`SYS_EXIT` do semihosting (`--machine=cortex-m`).
 
 ### `WFI` em user-mode: por que não trava (task B4.0.1)
 
@@ -166,6 +172,52 @@ java -jar target/armbox-*.jar --arch=thumb2 testdata/thumb2-torture.elf   # exit
 java -jar target/armbox-*.jar --arch=thumb2 --interp testdata/thumb2-torture.elf
 java -jar target/armbox-*.jar --arch=thumb2 --check testdata/thumb2-torture.elf
 ```
+
+### Modo bare-metal Cortex-M (task B7.5)
+
+`--machine=cortex-m` é um segundo modo de máquina, ao lado do `linux-user` de sempre:
+sem SO, boot pela tabela de vetores (ARMv7-M ARM §B1.5.5) em vez de ELF+syscalls.
+Reusa o loader ELF (`.elf`) — ou aceita `.bin` cru carregado direto em `0x0` — e os
+mesmos 3 backends (JIT/interpretado/`--check`).
+
+Mapa de memória fixo: flash em `0x00000000` (imagem carregada), RAM em `0x20000000`
+(tamanho por `--ram-size`, default 1 MiB), SCS (System Control Space — `NVIC`/`SysTick`/
+`SHPR`/`VTOR`/...) em `0xE000E000`, implementado por
+`dev.vitorsilverio.armjitter.core.MProfileSystemControl`. Todo o mapa vive num
+`PagedAddressSpace` (task C3) — primeiro consumidor real do utilitário fora dos
+próprios testes/benchmark dele.
+
+Saída via **semihosting** (`BKPT 0xAB`, convenção ARM padrão: R0 = operação, R1 =
+ponteiro/valor de argumento) — implementado como um `BkptDispatcher` novo no
+arm-jitter (mesmo padrão do `SwiDispatcher` de SWI), instalado via
+`ArmCore#setBkptDispatcher`:
+
+- `SYS_WRITE0` (`0x04`): string NUL-terminada em `[R1]` → stdout (limite de 64 KiB
+  contra firmware quebrado sem NUL).
+- `SYS_WRITEC` (`0x03`): um caractere em `[R1]` → stdout.
+- `SYS_EXIT` (`0x18`): `R1` = código de saída do processo.
+
+```powershell
+java -jar target/armbox-*.jar --arch=armv7m --machine=cortex-m testdata/cortexm-torture.elf   # exit 0
+java -jar target/armbox-*.jar --arch=armv6m --machine=cortex-m testdata/cortexm-torture-m0.elf
+java -jar target/armbox-*.jar --arch=armv7m --machine=cortex-m testdata/hello-cortexm.elf      # "hello cortex-m"
+```
+
+`testdata/cortexm-torture.s` (ARMv7-M, `-mcpu=cortex-m3`) e `testdata/cortexm-torture-m0.s`
+(subconjunto ARMv6-M, `-mcpu=cortex-m0`, sem MOVW/MOVT/SDIV/UDIV/UBFX/LDREX/STREX/blocos
+IT) cobrem: reset com MSP correto; `SVC` respondido em MSP e depois em PSP (troca via
+`CONTROL.SPSEL`); `SysTick` (RVR curto, `TICKINT`, contador incrementado por handler);
+`PendSV` pendido de DENTRO do handler de `SysTick` e só entrando depois (prioridade
+igual não preempta); `PRIMASK` segurando a entrega e liberando na sequência;
+`MRS`/`MSR` de `MSP`/`PSP`/`CONTROL`/`PRIMASK` ida-e-volta; e (só a variante m3)
+`MOVW`/`MOVT`, `SDIV`/`UDIV`, `UBFX`, `LDREX`+`STREX`. Sai com 0 (tudo passou) ou 1
+(alguma checagem falhou) — `cortexm-torture-broken.s` é o "teste do teste" (uma
+checagem deliberadamente errada, prova que o harness detecta regressão).
+`hello-cortexm.c` é o sinal de compilador real: gcc puro (`-nostdlib`, sem CRT), tabela
+de vetores como array de ponteiros de função em C (o compilador já emite o bit Thumb
+certo em cada entrada, sem `.word` cru).
+
+Ver `CortexMTortureTest` (JUnit) e `dev.vitorsilverio.armbox.baremetal.CortexMMachine`.
 
 ## Compilação
 

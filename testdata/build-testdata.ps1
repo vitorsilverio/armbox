@@ -52,3 +52,22 @@ Write-Host "armv7a-torture-broken.elf gerado."
 & $gcc -nostdlib -static -march=armv7-a -mfpu=vfp -mfloat-abi=hard -O2 "-Wl,-Ttext=0x10000" -o "$PSScriptRoot\hello-float.elf" "$PSScriptRoot\hello-float.c"
 if ($LASTEXITCODE -ne 0) { throw "build do hello-float.elf falhou" }
 Write-Host "hello-float.elf gerado."
+
+# B7.5 — runner bare-metal Cortex-M (--machine=cortex-m --arch=armv6m|armv7m): firmware
+# bare-metal de verdade (tabela de vetores própria, sem CRT/libc, saída via semihosting
+# BKPT 0xAB), ligado com o linker script flash.ld (flash em 0x0, RAM em 0x20000000).
+& $gcc -nostdlib -static -mcpu=cortex-m3 -mthumb -T "$PSScriptRoot\flash.ld" -o "$PSScriptRoot\cortexm-torture.elf" "$PSScriptRoot\cortexm-torture.s"
+if ($LASTEXITCODE -ne 0) { throw "build do cortexm-torture.elf falhou" }
+Write-Host "cortexm-torture.elf gerado."
+
+& $gcc -nostdlib -static -mcpu=cortex-m3 -mthumb -T "$PSScriptRoot\flash.ld" -o "$PSScriptRoot\cortexm-torture-broken.elf" "$PSScriptRoot\cortexm-torture-broken.s"
+if ($LASTEXITCODE -ne 0) { throw "build do cortexm-torture-broken.elf falhou" }
+Write-Host "cortexm-torture-broken.elf gerado."
+
+& $gcc -nostdlib -static -mcpu=cortex-m0 -mthumb -T "$PSScriptRoot\flash.ld" -o "$PSScriptRoot\cortexm-torture-m0.elf" "$PSScriptRoot\cortexm-torture-m0.s"
+if ($LASTEXITCODE -ne 0) { throw "build do cortexm-torture-m0.elf falhou" }
+Write-Host "cortexm-torture-m0.elf gerado."
+
+& $gcc -nostdlib -static -mcpu=cortex-m3 -mthumb -T "$PSScriptRoot\flash.ld" -O2 -o "$PSScriptRoot\hello-cortexm.elf" "$PSScriptRoot\hello-cortexm.c"
+if ($LASTEXITCODE -ne 0) { throw "build do hello-cortexm.elf falhou" }
+Write-Host "hello-cortexm.elf gerado."

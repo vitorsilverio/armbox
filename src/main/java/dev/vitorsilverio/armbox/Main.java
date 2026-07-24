@@ -1,5 +1,6 @@
 package dev.vitorsilverio.armbox;
 
+import dev.vitorsilverio.armbox.baremetal.CortexMMachine;
 import dev.vitorsilverio.armjitter.arch.ArmArchitecture;
 
 import java.io.IOException;
@@ -8,14 +9,19 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/// CLI: `armbox [--arch=armv5te|armv6k|thumb2|armv7a] [--interp|--check] <elf> [args...]`.
+/// CLI: `armbox [--arch=...] [--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] <elf|bin> [args...]`.
 public final class Main {
+    private static final String MACHINE_LINUX_USER = "linux-user";
+    private static final String MACHINE_CORTEX_M = "cortex-m";
+
     private Main() {
     }
 
     public static void main(String[] args) throws IOException {
         Armbox.Backend backend = Armbox.Backend.JIT;
         ArmArchitecture architecture = ArmArchitecture.ARMV5TE;
+        String machine = MACHINE_LINUX_USER;
+        int ramSizeBytes = CortexMMachine.DEFAULT_RAM_SIZE_BYTES;
         int index = 0;
         while (index < args.length && args[index].startsWith("--")) {
             String arg = args[index];
@@ -26,6 +32,8 @@ public final class Main {
                     case "armv6k" -> ArmArchitecture.ARMV6K;
                     case "thumb2" -> ArmArchitecture.ARMV6K_THUMB2;
                     case "armv7a" -> ArmArchitecture.ARMV7A;
+                    case "armv6m" -> ArmArchitecture.ARMV6M;
+                    case "armv7m" -> ArmArchitecture.ARMV7M;
                     default -> {
                         System.err.println("--arch desconhecido: " + value);
                         usage();
@@ -35,6 +43,15 @@ public final class Main {
                 if (architecture == null) {
                     return;
                 }
+            } else if (arg.startsWith("--machine=")) {
+                machine = arg.substring("--machine=".length());
+                if (!machine.equals(MACHINE_LINUX_USER) && !machine.equals(MACHINE_CORTEX_M)) {
+                    System.err.println("--machine desconhecido: " + machine);
+                    usage();
+                    return;
+                }
+            } else if (arg.startsWith("--ram-size=")) {
+                ramSizeBytes = Integer.decode(arg.substring("--ram-size=".length()));
             } else {
                 switch (arg) {
                     case "--interp" -> backend = Armbox.Backend.INTERPRETED;
@@ -53,20 +70,33 @@ public final class Main {
             usage();
             return;
         }
-        Path elfPath = Path.of(args[index]);
+        Path imagePath = Path.of(args[index]);
+        byte[] image = Files.readAllBytes(imagePath);
+
+        if (machine.equals(MACHINE_CORTEX_M)) {
+            if (architecture != ArmArchitecture.ARMV6M && architecture != ArmArchitecture.ARMV7M) {
+                System.err.println("--machine=cortex-m exige --arch=armv6m ou --arch=armv7m");
+                usage();
+                return;
+            }
+            int exitCode = CortexMMachine.run(image, backend, architecture, ramSizeBytes, System.out, System.err);
+            System.exit(exitCode);
+            return;
+        }
+
         List<String> argv = new ArrayList<>();
-        argv.add(elfPath.getFileName().toString());
+        argv.add(imagePath.getFileName().toString());
         for (int i = index + 1; i < args.length; i++) {
             argv.add(args[i]);
         }
-        byte[] elf = Files.readAllBytes(elfPath);
-        int exitCode = Armbox.run(elf, argv, List.of(), backend, architecture,
+        int exitCode = Armbox.run(image, argv, List.of(), backend, architecture,
                 System.in, System.out, System.err, System.err);
         System.exit(exitCode);
     }
 
     private static void usage() {
-        System.err.println("uso: armbox [--arch=armv5te|armv6k|thumb2|armv7a] [--interp|--check] <elf> [args...]");
+        System.err.println("uso: armbox [--arch=armv5te|armv6k|thumb2|armv7a|armv6m|armv7m] "
+                + "[--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] <elf|bin> [args...]");
         System.exit(2);
     }
 }
