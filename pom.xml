@@ -94,6 +94,14 @@
                                      Truffle roda sempre no tier frio (aceite #2 da A5). -->
                                 <buildArg>--enable-monitoring=jfr</buildArg>
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                                <!-- Task A8: PGO+O3 venceu as 4 métricas (startup, throughput
+                                     truffle/interp, RSS) contra baseline/-O3/-O3+march=native
+                                     (G1 indisponível no Windows). Perfil gerado do workload de
+                                     referência (busybox loop 2000 + hello.elf), ver
+                                     native-profile/default.iprof e tasks/trilha-a-truffle/
+                                     RELATORIO-A5.md#a8 para o procedimento de regeneração. -->
+                                <buildArg>--pgo=native-profile/default.iprof</buildArg>
+                                <buildArg>-O3</buildArg>
                             </buildArgs>
                         </configuration>
                         <executions>
