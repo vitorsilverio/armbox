@@ -324,3 +324,11 @@ mvn -Pnative -DskipTests package
 deliberadamente lento — não comparar tempos dele, só existe para gerar o
 `.iprof`. G1 falhou por ser Linux/AArch64-only nesta versão do native-image,
 não por erro de configuração.
+
+## Licença
+
+BSD 3-Clause — ver [LICENSE](LICENSE).
+
+Os binários de terceiros usados em testes e execução (BIOS, firmware, ROMs, kernels,
+`busybox`) **não** são cobertos por esta licença e não são redistribuídos por este projeto
+salvo quando a licença original permitir; ver o `README.md` do diretório correspondente.
