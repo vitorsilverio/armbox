@@ -1,5 +1,7 @@
 # armbox
 
+[![CI](https://github.com/vitorsilverio/armbox/actions/workflows/ci.yml/badge.svg)](https://github.com/vitorsilverio/armbox/actions/workflows/ci.yml)
+
 Runner **Linux user-mode** para binários ARM 32-bit (estilo `qemu-arm`), construído
 sobre o [arm-jitter](../arm-jitter). Carrega um ELF estático, monta a pilha ABI do
 Linux, mapeia os kuser helpers do kernel ARM e traduz syscalls EABI para o host — com
