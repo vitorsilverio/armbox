@@ -83,187 +83,18 @@ para pc=0. Custou uma sessão de debug; ver `LinuxGuest.KERNEL_TERMIOS_SIZE`.
 
 ## Binários de teste
 
-Não há toolchain glibc no Windows; os binários de teste usam **syscalls cruas**
-(`-nostdlib`) compilados pelo devkitARM (`C:\devkitPro\devkitARM`):
+Cada arquitetura suportada (ARMv5TE, ARMv6K, Thumb-2, ARMv7-A, Cortex-M) é validada com
+um binário real além dos testes de equivalência Java — torture tests escritos à mão e
+compilados com devkitARM, e binários gerados por `gcc` real. Detalhe completo, incluindo
+o `busybox` estático usado como corpus e as armadilhas encontradas:
+**[docs/TESTING.md](docs/TESTING.md)**.
 
 ```powershell
 .\testdata\build-testdata.ps1   # gera testdata/hello.elf a partir de hello.s
-java -jar target/armbox-*.jar testdata/hello.elf   # → "hello from a real ELF", exit 42
-```
-
-Os testes de integração também montam ELFs sintéticos em memória (instruções ARM
-codificadas à mão em `ArmboxIntegrationTest`), então `mvn test` funciona sem toolchain.
-
-`testdata/busybox-armv5l` é o build estático oficial de busybox.net (musl, ARMv5L):
-
-```powershell
+java -jar target/armbox-*.jar testdata/hello.elf                        # exit 42
 java -jar target/armbox-*.jar testdata/busybox-armv5l sh -c "echo a; echo b"
+java -jar target/armbox-*.jar --arch=armv6k testdata/armv6k-torture.elf # exit 0
 ```
-
-### Binários ARMv6K (task B4.0.1)
-
-`B1.1-B1.6` implementaram e testaram ARMv6K inteiramente por equivalência Java — nunca
-por um binário ELF real. `testdata/armv6k-torture.s` fecha essa lacuna: um torture
-test escrito à mão (`-nostdlib`, devkitARM `-march=armv6k`), auto-verificável, cobrindo
-pelo menos um representante de cada grupo de instrução novo:
-
-- `SXTB` com rotação, `UXTAH` com acumulador **e** rotação;
-- `REV`/`REV16`, `UMAAL`;
-- `SADD16` (com GE), `UQSUB8`, `UADD8`+`SEL` (SEL consumindo o GE produzido);
-- `PKHBT`, `SSAT` (com o Q sticky), `USAD8`;
-- `LDREX`/`STREX`/`CLREX` — sucesso E as **duas** formas de falha do monitor de
-  exclusividade, forçadas explicitamente: `STREX` sem `LDREX` prévio, e
-  `LDREX`→`CLREX`→`STREX`;
-- `CPS` (`CPSID`/`CPSIE if`), `SETEND` (round-trip BE→LE sem acesso a dado no meio —
-  ver Armadilhas), `WFI` (ver seção acima sobre a política de auto-wake).
-
-Cada grupo compara o resultado contra o vetor esperado (os mesmos valores dos testes
-Java `ArmV6*Test`) e sai com um **código de saída único por checagem** (1-26) se
-divergir; sucesso = exit 0.
-
-```powershell
-java -jar target/armbox-*.jar --arch=armv6k testdata/armv6k-torture.elf   # exit 0, "armv6k torture: ok"
-java -jar target/armbox-*.jar --arch=armv6k --interp testdata/armv6k-torture.elf
-java -jar target/armbox-*.jar --arch=armv6k --check testdata/armv6k-torture.elf
-```
-
-`testdata/armv6k-torture-broken.s` é o "teste do teste": uma cópia mínima do mesmo
-padrão de verificação com um valor esperado **deliberadamente errado** — prova que o
-harness realmente detectaria uma regressão (exit 77, não 0). Não é cobertura de
-instrução nova, só uma sentinela do harness em si (`ArmV6TortureTest`).
-
-`testdata/hello-armv6k.s` é o sinal complementar: o mesmo `hello.s` (sem nenhuma
-instrução ARMv6K nova — GCC raramente emite SIMD paralelo/UMAAL/LDREX sem intrínsecos)
-recompilado com `-march=armv6k`, provando que o toolchain aceita o alvo para código
-"normal" também. `hello.elf`/`hello.s` (ARMv5TE) continuam intocados.
-
-### Binário Thumb-2 (task B4.0.2)
-
-`B2.1` (infra) e `B2.2` (data-processing de 32 bits) foram implementados e testados
-inteiramente por equivalência Java (`Thumb2DataProcessingDecoderTest`) — nunca por um
-binário ELF real. Diferente de B4.0.1, a arquitetura `ARMV6K_THUMB2` (com
-`ArmFeature.THUMB2` + `Thumb2DataProcessingDecoder`) não existia como preset público
-antes desta task — só como `ArmArchitecture.extending(...)` construído manualmente
-dentro de cada teste; agora vive em `ArmArchitecture.ARMV6K_THUMB2` no
-arm-jitter, ao lado de `ARMV6K`.
-
-O nome deliberadamente **não** diz "THUMB2" sozinho nem "ARMv7": não é o ARMv7-A
-completo da task B3 (sem VFP/SDIV/UDIV), nem sequer o Thumb-2 completo do épico B2
-(faltam load/store 32-bit de B2.3, branches+IT de B2.4 e misc de B2.5 — mesmo já ✅ no
-índice de tasks, o Objetivo desta task B4.0.2 escopa só B2.1-B2.2; a convenção
-documentada no arm-jitter é acrescentar o `DecoderExtension` de cada B2.x nova ao
-preset conforme fecham).
-
-`testdata/thumb2-torture.s` cobre pelo menos um representante de cada grupo pedido:
-
-- modified immediate com carry-out (`ANDS`/`ADDS` com imediato rotacionado; `MVN`
-  via o alias `ORN`+`Rn=PC` de graça);
-- `MOVW`+`MOVT` compondo uma constante de 32 bits;
-- `ADD Rd,SP,#imm` (Rn=SP genérico) e `ADR` nas duas direções (Rn=PC, soma e
-  subtração — cobre os dois ramos `PLAIN_OP_ADD`/`PLAIN_OP_SUB`);
-- forma registrador com shift imediato (`ADD ...,LSL#n`) e `RRX` (só existe em
-  Thumb-2, sem equivalente Thumb-1).
-
-Escrito à mão em encoding Thumb-2 de 32 bits genuíno (`.syntax unified`, sufixo `.w`
-explícito nos casos ambíguos) — **só usa branches Thumb-1 de 16 bits** (`B`/`Bcc`
-curtos): `B.W`/`BL.W` de 32 bits são o grupo de branches/IT de B2.4, que este preset
-ainda não decodifica, e um branch de 32 bits no teste viraria `UNDEFINED`.
-
-```powershell
-java -jar target/armbox-*.jar --arch=thumb2 testdata/thumb2-torture.elf   # exit 0, "thumb2 torture: ok"
-java -jar target/armbox-*.jar --arch=thumb2 --interp testdata/thumb2-torture.elf
-java -jar target/armbox-*.jar --arch=thumb2 --check testdata/thumb2-torture.elf
-```
-
-### Binário de compilador Thumb-2 completo (task B4.0.3)
-
-Nível N3 da matriz (`docs/VALIDACAO-ARQUITETURAS.md` do arm-jitter) para Thumb-2: código
-que nós não escrevemos à mão, com a malícia real de um compilador — load/store de 32
-bits, tabela `TBB` e `IT` blocks à vontade.
-
-`testdata/hello-thumb2.c` é `gcc` real (`-march=armv7-a -mthumb -Os -nostdlib -static`,
-ver o comentário no topo do `.c`): um struct com bitfields (`UBFX`/`SBFX`/`STRH`), `STRD`
-explícito, um switch denso que o gcc compila para `TBB`, e um qsort pequeno e recursivo
-(`IT` blocks + cmp/branches curtos). Roda com `--arch=armv7a`, **não** `--arch=thumb2` —
-o struct com bitfields obriga `UBFX`/`SBFX`, que só o preset `ARMV7A` decodifica em
-Thumb-2 (`ArmFeature.BIT_FIELD`; `ARMV6K_THUMB2` não tem essa feature, decisão do épico
-B3), mesmo fallback previsto pela própria task quando o binário usa algo v7-only.
-`objdump -d` confirma `ldr.w`/`strd`/`ldmia.w`/`tbb`/`it`(`e`)/`bl` no binário, e a
-ausência de `sdiv`/`udiv`/`movw`/`movt`/`bfi`/`dmb` (só `ubfx`/`sbfx`, daí o fallback).
-
-```powershell
-java -jar target/armbox-*.jar --arch=armv7a testdata/hello-thumb2.elf         # checksum hex + exit 0
-java -jar target/armbox-*.jar --arch=armv7a --interp testdata/hello-thumb2.elf
-java -jar target/armbox-*.jar --arch=armv7a --check testdata/hello-thumb2.elf
-```
-
-**Achado real desta task**: o preset público `ArmArchitecture.ARMV7A` (arm-jitter) tinha
-um bug de fiação — `Thumb2DataProcessingDecoder`/`Thumb2RegisterDataProcessingDecoder`/
-`Thumb2MultiplyDecoder` recebiam `ARMV6K_THUMB2_FEATURES` (sem `BIT_FIELD`/
-`BIT_REVERSE`/`MLS_MULTIPLY`/`DIVIDE`) no construtor em vez de `ARMV7A_FEATURES`, então
-`UBFX`/`SBFX`/`RBIT`/`SDIV`/`UDIV`/`MLS` em encoding **Thumb-2** viravam `UNDEFINED`
-mesmo com o preset `ARMV7A` tendo as features certas — o encoding ARM clássico nunca
-teve esse bug (usa a `architecture` real, não uma cópia guardada no construtor).
-Corrigido no arm-jitter; ver o javadoc de `ArmArchitecture.ARMV7A` e o teste de
-regressão `ArmV7aThumb2PresetIntegrationTest` (decodifica contra o preset PÚBLICO, não
-um preset sintético de teste — é o que teria pego esse bug antes).
-
-**Busybox Thumb-2 (item 3 da task, NÃO fechado nesta sessão)**: a task pede um busybox
-estático compilado em Thumb-2, baixado ou buildado. Não há binário pré-compilado em
-Thumb-2 nos releases oficiais de busybox.net (só ARM mode, uclibc-static, ver
-`testdata/busybox-armv5l`). Buildar da fonte exige um toolchain `arm-linux-*` (musl/
-glibc) real — os cross-toolchains Linux do musl.cc (`armv7l-linux-musleabihf-cross`,
-por exemplo) são binários ELF Linux, não rodam neste ambiente Windows/MSYS2 (sem WSL
-com uma distro completa configurada); o devkitARM instalado é bare-metal
-(`arm-none-eabi`, sem libc de userspace Linux), não serve para linkar busybox. Fica
-pendente para uma sessão com um toolchain `arm-linux-*` real disponível (ex.: WSL com
-uma distro Linux configurada, ou um cross-toolchain Windows-hosted).
-
-### Modo bare-metal Cortex-M (task B7.5)
-
-`--machine=cortex-m` é um segundo modo de máquina, ao lado do `linux-user` de sempre:
-sem SO, boot pela tabela de vetores (ARMv7-M ARM §B1.5.5) em vez de ELF+syscalls.
-Reusa o loader ELF (`.elf`) — ou aceita `.bin` cru carregado direto em `0x0` — e os
-mesmos 3 backends (JIT/interpretado/`--check`).
-
-Mapa de memória fixo: flash em `0x00000000` (imagem carregada), RAM em `0x20000000`
-(tamanho por `--ram-size`, default 1 MiB), SCS (System Control Space — `NVIC`/`SysTick`/
-`SHPR`/`VTOR`/...) em `0xE000E000`, implementado por
-`dev.vitorsilverio.armjitter.core.MProfileSystemControl`. Todo o mapa vive num
-`PagedAddressSpace` (task C3) — primeiro consumidor real do utilitário fora dos
-próprios testes/benchmark dele.
-
-Saída via **semihosting** (`BKPT 0xAB`, convenção ARM padrão: R0 = operação, R1 =
-ponteiro/valor de argumento) — implementado como um `BkptDispatcher` novo no
-arm-jitter (mesmo padrão do `SwiDispatcher` de SWI), instalado via
-`ArmCore#setBkptDispatcher`:
-
-- `SYS_WRITE0` (`0x04`): string NUL-terminada em `[R1]` → stdout (limite de 64 KiB
-  contra firmware quebrado sem NUL).
-- `SYS_WRITEC` (`0x03`): um caractere em `[R1]` → stdout.
-- `SYS_EXIT` (`0x18`): `R1` = código de saída do processo.
-
-```powershell
-java -jar target/armbox-*.jar --arch=armv7m --machine=cortex-m testdata/cortexm-torture.elf   # exit 0
-java -jar target/armbox-*.jar --arch=armv6m --machine=cortex-m testdata/cortexm-torture-m0.elf
-java -jar target/armbox-*.jar --arch=armv7m --machine=cortex-m testdata/hello-cortexm.elf      # "hello cortex-m"
-```
-
-`testdata/cortexm-torture.s` (ARMv7-M, `-mcpu=cortex-m3`) e `testdata/cortexm-torture-m0.s`
-(subconjunto ARMv6-M, `-mcpu=cortex-m0`, sem MOVW/MOVT/SDIV/UDIV/UBFX/LDREX/STREX/blocos
-IT) cobrem: reset com MSP correto; `SVC` respondido em MSP e depois em PSP (troca via
-`CONTROL.SPSEL`); `SysTick` (RVR curto, `TICKINT`, contador incrementado por handler);
-`PendSV` pendido de DENTRO do handler de `SysTick` e só entrando depois (prioridade
-igual não preempta); `PRIMASK` segurando a entrega e liberando na sequência;
-`MRS`/`MSR` de `MSP`/`PSP`/`CONTROL`/`PRIMASK` ida-e-volta; e (só a variante m3)
-`MOVW`/`MOVT`, `SDIV`/`UDIV`, `UBFX`, `LDREX`+`STREX`. Sai com 0 (tudo passou) ou 1
-(alguma checagem falhou) — `cortexm-torture-broken.s` é o "teste do teste" (uma
-checagem deliberadamente errada, prova que o harness detecta regressão).
-`hello-cortexm.c` é o sinal de compilador real: gcc puro (`-nostdlib`, sem CRT), tabela
-de vetores como array de ponteiros de função em C (o compilador já emite o bit Thumb
-certo em cada entrada, sem `.word` cru).
-
-Ver `CortexMTortureTest` (JUnit) e `dev.vitorsilverio.armbox.baremetal.CortexMMachine`.
 
 ## Compilação
 
@@ -272,61 +103,21 @@ JDK do projeto = JBR 25 (`C:\Users\user\.jdks\jbr-25.0.3`). `dev.vitorsilverio:a
 instalar uma versão local (`-SNAPSHOT`, sem commitar) quando se está desenvolvendo a lib junto
 com o armbox — ver `arm-jitter/README.md`.
 
-### Otimizações do binário nativo (task A8, 2026-07-31)
+### Build nativo (GraalVM native-image)
 
-5 variantes do perfil Maven `native` medidas na mesma máquina/sessão (GraalVM
-25.0.3+9.1 Oracle, MSVC 19.44.35226, `armbox.exe`). Protocolo: best-of-5 para
-startup/throughput; RSS = `PeakWorkingSet64` amostrado por polling a cada 20ms
-durante a execução única do workload de throughput; corretude = `hello.elf`
-(exit 42) + `busybox-armv5l sh -c "echo hi"` (stdout `hi`, exit 0) nos dois
-backends (`--truffle`/`--interp`).
+O perfil Maven `native` gera um executável standalone com GraalVM (perfil PGO+`-O3` como
+default, medido contra 4 outras variantes). Detalhe dos benchmarks e como regenerar o
+perfil PGO: **[docs/NATIVE-BUILD.md](docs/NATIVE-BUILD.md)**.
 
-Workloads: startup = `armbox.exe --truffle hello.elf`; throughput = o loop de
-referência das tasks A5/A7 (`busybox sh -c 'i=0; while [ $i -lt 2000 ]; do
-i=$((i+1)); done; echo done $i'`) medido em `--truffle` e `--interp`; RSS
-amostrado durante o throughput `--truffle`.
+## Como contribuir
 
-| # | Variante | Startup (ms) | Throughput truffle (ms) | Throughput interp (ms) | RSS pico (MB) | Corretude |
-|---|----------|-------------:|-------------------------:|------------------------:|--------------:|:---------:|
-| 1 | Baseline (config anterior à A8) | 31,25 | 2563,80 | 1720,41 | 101,84 | ✅ |
-| 2 | `-O3` | 43,22 | 2318,97 | 1625,09 | 103,56 | ✅ |
-| 3 | `-O3 -march=native` | 33,50 | 2174,94 | 1535,99 | 103,84 | ✅ |
-| 4 | `--gc=G1` | — | — | — | — | 🔴 build falhou: `Error: The G1 garbage collector ('--gc=G1') is currently only supported on Linux AMD64 and AArch64.` (esperado pela própria task — registrado, não é bloqueio) |
-| **5** | **`--pgo=<profile> -O3`** ✅ **vencedora** | **33,01** | **2101,03** | **1466,21** | **97,29** | ✅ |
+Issues e pull requests são bem-vindos — ver [CONTRIBUTING.md](CONTRIBUTING.md).
 
-A variante **5 (PGO+O3)** venceu (ou empatou) as 4 métricas simultaneamente —
-melhor throughput nos dois backends, menor RSS (única variante ABAIXO do
-baseline) e startup no mesmo patamar da `-march=native` — e foi **promovida a
-default do perfil `native`** (`pom.xml`). `-march=native` (variante 3) gera
-binário não-portável (amarrado ao microarch da máquina de build) e não venceu
-PGO em nenhuma métrica, por isso não foi escolhida apesar de próxima.
+## Autor e contato
 
-O perfil PGO usado (`native-profile/default.iprof`, comitado no repo) foi
-gerado com o workload de throughput `--truffle` + `hello.elf` (cobre boot e
-loop quente), conforme a task pede. Para regenerar após mudanças relevantes de
-código (arm-jitter/truffle ou armbox):
-
-```bat
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-set JAVA_HOME=E:\graalvm-jdk-25.0.3+9.1
-set PATH=%JAVA_HOME%\bin;%PATH%
-cd armbox
-
-:: 1. build instrumentado (edite temporariamente o buildArg para --pgo-instrument)
-mvn -Pnative -DskipTests package
-target\armbox.exe --truffle testdata\hello.elf
-target\armbox.exe --truffle testdata\busybox-armv5l sh -c "i=0; while [ $i -lt 2000 ]; do i=$((i+1)); done; echo done $i"
-:: gera .\default.iprof (CWD do processo, não target\)
-move default.iprof native-profile\default.iprof
-
-:: 2. build final (buildArg de volta a --pgo=native-profile/default.iprof -O3)
-mvn -Pnative -DskipTests package
-```
-
-**Armadilha confirmada** (já citada na task): o build instrumentado é
-deliberadamente lento — não comparar tempos dele, só existe para gerar o
-`.iprof`. G1 falhou por ser Linux/AArch64-only nesta versão do native-image,
-não por erro de configuração.
+Feito por [Vitor Silvério Rodrigues](https://vitorsilverio.dev/) — blog/currículo com mais
+detalhes sobre este e outros projetos. Contato: vitor.silverio.rodrigues@gmail.com ou uma
+[issue](https://github.com/vitorsilverio/armbox/issues) neste repositório.
 
 ## Licença
 
