@@ -15,7 +15,7 @@ b4.0-runner-user-mode.md`) e o veículo de validação das trilhas de arquitetur
 
 ```bash
 mvn package
-java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=...] [--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] <elf|bin> [args...]
+java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=...] [--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] [--gdb=PORT] <elf|bin> [args...]
 ```
 
 | Flag | Efeito |
@@ -25,18 +25,40 @@ java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=...] [--machine=linux-user|cort
 | `--arch=thumb2` | `ArmArchitecture.ARMV6K_THUMB2` — ARMv6K mais o subconjunto Thumb-2 de 32 bits já implementado (infra de B2.1 + data-processing de B2.2: modified immediate com carry-out, MOVW/MOVT, ADD/SUB/ADR, forma registrador com shift incl. RRX). **Não** é o ARMv7-A completo — sem load/store 32-bit, branches/IT ou misc de 32 bits ainda (task B4.0.2) |
 | `--arch=armv7a` | `ArmArchitecture.ARMV7A` — inteiro v7 completo + VFPv2 (épico B3) |
 | `--arch=armv6m` / `--arch=armv7m` | `ArmArchitecture.ARMV6M`/`ARMV7M` — perfil Cortex-M (épico B7); exige `--machine=cortex-m` |
+| `--arch=aarch64` | pipeline AArch64 separado (`Aarch64LinuxMachine`, B6.2) — só `--machine=linux-user` |
 | `--machine=linux-user` (padrão) | modo de sempre: ELF Linux + syscalls (ver seções abaixo) |
 | `--machine=cortex-m` | bare-metal Cortex-M (task B7.5, ver seção própria) — exige `--arch=armv6m` ou `armv7m` |
 | `--ram-size=N` | só `--machine=cortex-m`: tamanho da RAM em `0x20000000` em bytes (default 1 MiB) |
+| `--gdb=PORT` | em vez de rodar sozinho, abre um stub GDB remote serial e bloqueia esperando um cliente — ver seção própria abaixo. Só `--machine=linux-user` (32 e 64 bits) |
 | (padrão) | JIT bytecode JVM (`JitRuntimeFactory.armThumb`) |
 | `--interp` | Interpretador IR (debug/oráculo) |
 | `--check` | JIT e interpretador em paralelo, aborta na primeira divergência |
 
-`--arch`/`--machine`/`--ram-size` são processados antes de `--interp`/`--check` e antes
+`--arch`/`--machine`/`--ram-size`/`--gdb` são processados antes de `--interp`/`--check` e antes
 do caminho do arquivo; podem ser combinados: `--arch=armv6k --check testdata/armv6k-torture.elf`.
 
 O código de saída do processo é o `exit()` do guest (`--machine=linux-user`) ou o
 `SYS_EXIT` do semihosting (`--machine=cortex-m`).
+
+### Depuração com GDB (`--gdb=PORT`)
+
+Expõe o core como um stub GDB remote serial (`arm-jitter`'s `GdbServer`/`Gdb64Server`, ver
+`arm-jitter/docs/USAGE.md`): registradores, memória, breakpoints em PC, watchpoints de escrita,
+step e continue. Suportado em `--machine=linux-user`, tanto 32-bit quanto `--arch=aarch64`:
+
+```bash
+java -jar target/armbox-*.jar --gdb=3333 testdata/hello.elf
+# noutro terminal:
+arm-none-eabi-gdb testdata/hello.elf -ex "target remote :3333"
+
+java -jar target/armbox-*.jar --arch=aarch64 --gdb=3333 testdata/hello-aarch64.elf
+aarch64-none-elf-gdb testdata/hello-aarch64.elf -ex "target remote :3333"
+```
+
+O passo de depuração usa sempre o **interpretador puro** (`ArmCore#step()`/`Ir64BlockExecutor#step()`),
+não o `--interp`/`--check`/JIT escolhido — fidelidade de instrução a instrução, independente do
+backend. Um acesso de memória (`x`/`m`) fora da faixa mapeada do guest responde ao gdb com erro
+em vez de derrubar o processo. Ainda não suportado em `--machine=cortex-m`.
 
 ### `WFI` em user-mode: por que não trava (task B4.0.1)
 

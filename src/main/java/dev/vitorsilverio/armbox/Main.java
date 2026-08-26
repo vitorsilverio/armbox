@@ -30,6 +30,7 @@ public final class Main {
         String machine = MACHINE_LINUX_USER;
         int ramSizeBytes = CortexMMachine.DEFAULT_RAM_SIZE_BYTES;
         boolean aarch64 = false;
+        int gdbPort = 0;
         int index = 0;
         while (index < args.length && args[index].startsWith("--")) {
             String arg = args[index];
@@ -64,6 +65,8 @@ public final class Main {
                 }
             } else if (arg.startsWith("--ram-size=")) {
                 ramSizeBytes = Integer.decode(arg.substring("--ram-size=".length()));
+            } else if (arg.startsWith("--gdb=")) {
+                gdbPort = Integer.parseInt(arg.substring("--gdb=".length()));
             } else {
                 switch (arg) {
                     case "--interp" -> backend = Armbox.Backend.INTERPRETED;
@@ -91,7 +94,7 @@ public final class Main {
                 usage();
                 return;
             }
-            int exitCode = Aarch64LinuxMachine.run(image, System.out, System.err, System.err);
+            int exitCode = Aarch64LinuxMachine.run(image, System.out, System.err, System.err, gdbPort);
             System.exit(exitCode);
             return;
         }
@@ -99,6 +102,11 @@ public final class Main {
         if (machine.equals(MACHINE_CORTEX_M)) {
             if (architecture != ArmArchitecture.ARMV6M && architecture != ArmArchitecture.ARMV7M) {
                 System.err.println("--machine=cortex-m exige --arch=armv6m ou --arch=armv7m");
+                usage();
+                return;
+            }
+            if (gdbPort > 0) {
+                System.err.println("--gdb ainda não é suportado em --machine=cortex-m");
                 usage();
                 return;
             }
@@ -113,13 +121,13 @@ public final class Main {
             argv.add(args[i]);
         }
         int exitCode = Armbox.run(image, argv, List.of(), backend, architecture,
-                System.in, System.out, System.err, System.err);
+                System.in, System.out, System.err, System.err, gdbPort);
         System.exit(exitCode);
     }
 
     private static void usage() {
         System.err.println("uso: armbox [--arch=armv5te|armv6k|thumb2|armv7a|armv6m|armv7m|aarch64] "
-                + "[--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] <elf|bin> [args...]");
+                + "[--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] [--gdb=PORT] <elf|bin> [args...]");
         System.exit(2);
     }
 }

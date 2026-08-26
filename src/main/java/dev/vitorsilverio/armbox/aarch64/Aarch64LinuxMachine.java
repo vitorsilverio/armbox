@@ -2,6 +2,7 @@ package dev.vitorsilverio.armbox.aarch64;
 
 import dev.vitorsilverio.armbox.linux.GuestExitException;
 import dev.vitorsilverio.armjitter.core64.Aarch64Core;
+import dev.vitorsilverio.armjitter.debug.Gdb64Server;
 import dev.vitorsilverio.armjitter.executor64.Ir64BlockExecutor;
 
 import java.io.OutputStream;
@@ -35,6 +36,18 @@ public final class Aarch64LinuxMachine {
 
     /// Executa `elf` e devolve o código de saída do guest.
     public static int run(byte[] elf, OutputStream stdout, OutputStream stderr, PrintStream hostLog) {
+        return run(elf, stdout, stderr, hostLog, 0);
+    }
+
+    /// Mesmo que {@link #run(byte[], OutputStream, OutputStream, PrintStream)}, mas com um stub
+    /// GDB remote serial opcional (`gdbPort > 0`) — irmão A64 do stub do {@link
+    /// dev.vitorsilverio.armbox.Armbox} 32-bit: bloqueia servindo um cliente GDB
+    /// (`aarch64-none-elf-gdb <elf> -ex "target remote :PORT"`) até ele se desconectar, avançando
+    /// via {@link Ir64BlockExecutor#step(Aarch64Core)} (única forma de execução no B6.2, não há
+    /// JIT/tiered para A64 ainda — sem a distinção "step interpretado vs. backend escolhido" que
+    /// o irmão 32-bit precisa).
+    public static int run(byte[] elf, OutputStream stdout, OutputStream stderr, PrintStream hostLog,
+            int gdbPort) {
         Aarch64GuestMemory memory = new Aarch64GuestMemory();
         Elf64Image image = new Elf64Loader().load(elf, memory);
 
@@ -56,6 +69,12 @@ public final class Aarch64LinuxMachine {
 
         Ir64BlockExecutor executor = new Ir64BlockExecutor();
         try {
+            if (gdbPort > 0) {
+                hostLog.printf("armbox: gdb64 stub on port %d. connect with:%n  aarch64-none-elf-gdb <elf> -ex \"target remote :%d\"%n",
+                        gdbPort, gdbPort);
+                Gdb64Server.listenAndServe(gdbPort, core, memory, () -> executor.step(core));
+                return 0;
+            }
             while (true) {
                 executor.run(core, RUN_SLICE_INSTRUCTIONS);
             }

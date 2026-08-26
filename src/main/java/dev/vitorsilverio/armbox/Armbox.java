@@ -13,6 +13,7 @@ import dev.vitorsilverio.armjitter.arch.ArmArchitecture;
 import dev.vitorsilverio.armjitter.arch.ArmFeature;
 import dev.vitorsilverio.armjitter.core.ArmCore;
 import dev.vitorsilverio.armjitter.core.CpuMode;
+import dev.vitorsilverio.armjitter.debug.GdbServer;
 import dev.vitorsilverio.armjitter.decoder.InstructionSet;
 import dev.vitorsilverio.armjitter.jit.JitRuntime;
 import dev.vitorsilverio.armjitter.jit.JitRuntimeFactory;
@@ -95,6 +96,21 @@ public final class Armbox {
                           ArmArchitecture architecture,
                           InputStream stdin, OutputStream stdout, OutputStream stderr,
                           PrintStream hostLog) {
+        return run(elf, argv, envp, backend, architecture, stdin, stdout, stderr, hostLog, 0);
+    }
+
+    /// Mesmo que {@link #run(byte[], List, List, Backend, ArmArchitecture, InputStream,
+    /// OutputStream, OutputStream, PrintStream)}, mas com um stub GDB remote serial opcional
+    /// (`gdbPort > 0`): em vez do loop normal, bloqueia servindo um cliente GDB
+    /// (`arm-none-eabi-gdb <elf> -ex "target remote :PORT"`) até ele se desconectar. O passo de
+    /// depuração usa {@link ArmCore#step()} — o interpretador puro, não o `backend` escolhido —
+    /// para fidelidade de instrução a instrução independente do backend (mesmo padrão do stub GDB
+    /// do ndsemu, `NdsConsole#gdbStepArm9`); `backend` ainda decide o `JitRuntime` instalado, mas
+    /// ele só é exercitado se o guest ficar rodando fora do controle do gdb depois do `D`etach.
+    public static int run(byte[] elf, List<String> argv, List<String> envp, Backend backend,
+                          ArmArchitecture architecture,
+                          InputStream stdin, OutputStream stdout, OutputStream stderr,
+                          PrintStream hostLog, int gdbPort) {
         GuestMemory memory = new GuestMemory();
         Elf32Image image = new Elf32Loader().load(elf, memory);
         KuserHelpers.mapInto(memory);
@@ -141,7 +157,21 @@ public final class Armbox {
                 true);
         core.setRegister(SP_REGISTER, stackPointer);
 
+        Runnable stepOne = () -> {
+            core.step();
+            // Mesmo raciocínio de "WFI é um no-op observável em user-mode" do loop normal
+            // abaixo, aplicado passo a passo.
+            if (core.halted()) {
+                core.wake();
+            }
+        };
         try {
+            if (gdbPort > 0) {
+                hostLog.printf("armbox: gdb stub on port %d. connect with:%n  arm-none-eabi-gdb <elf> -ex \"target remote :%d\"%n",
+                        gdbPort, gdbPort);
+                GdbServer.listenAndServe(gdbPort, core, bus, stepOne);
+                return 0;
+            }
             while (true) {
                 core.runBlocks(runtime, RUN_SLICE_BLOCKS);
                 // armbox é user-mode puro: não há temporizador nem controlador de IRQ (isso
