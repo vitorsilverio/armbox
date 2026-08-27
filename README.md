@@ -120,7 +120,7 @@ java -jar target/armbox-*.jar --arch=armv6k testdata/armv6k-torture.elf # exit 0
 
 ## Compilação
 
-JDK do projeto = JBR 25 (`C:\Users\user\.jdks\jbr-25.0.3`). `dev.vitorsilverio:arm-jitter:1.1.0`
+JDK do projeto = JBR 25 (`C:\Users\user\.jdks\jbr-25.0.3`). `dev.vitorsilverio:arm-jitter:1.3.0`
 (+ `arm-jitter-truffle`) resolvem do **Maven Central**, sem `mvn install` local. Só é preciso
 instalar uma versão local (`-SNAPSHOT`, sem commitar) quando se está desenvolvendo a lib junto
 com o armbox — ver `arm-jitter/README.md`.
