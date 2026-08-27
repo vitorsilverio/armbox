@@ -28,6 +28,7 @@ public final class LinuxAbi {
     public static final int NR_SETGID16 = 46;
     public static final int NR_IOCTL = 54;
     public static final int NR_GETPPID = 64;
+    public static final int NR_MPROTECT = 125;
     public static final int NR_READLINK = 85;
     public static final int NR_WAIT4 = 114;
     public static final int NR_GETTIMEOFDAY = 78;
@@ -57,6 +58,11 @@ public final class LinuxAbi {
     public static final int NR_OPENAT = 322;
     public static final int NR_READLINKAT = 332;
     public static final int NR_FACCESSAT = 334;
+    public static final int NR_SET_ROBUST_LIST = 338;
+    public static final int NR_GETRANDOM = 384;
+    public static final int NR_STATX = 397;
+    public static final int NR_RSEQ = 398;
+    public static final int NR_CLOCK_GETTIME64 = 403;
 
     // Syscalls privadas do port ARM (base 0x0F0000).
     public static final int NR_ARM_CACHEFLUSH = 0x0F0002;

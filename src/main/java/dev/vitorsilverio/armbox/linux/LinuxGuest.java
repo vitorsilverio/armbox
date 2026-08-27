@@ -48,6 +48,7 @@ public final class LinuxGuest {
     private final OutputStream stderr;
     private final PrintStream hostLog;
     private final Map<Integer, SeekableByteChannel> openFiles = new HashMap<>();
+    private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
 
     private ArmCore core;
     private int currentBrk;
@@ -141,6 +142,20 @@ public final class LinuxGuest {
             // O JIT já invalida via InvalidationAwareAddressSpace; nada a fazer.
             case LinuxAbi.NR_ARM_CACHEFLUSH -> 0;
             case LinuxAbi.NR_ARM_SET_TLS -> setTls(a0);
+            // Nenhuma proteção de página é modelada (fase 2) — sempre bem-sucedido, como o
+            // restante do bloco "no-op" acima.
+            case LinuxAbi.NR_MPROTECT -> 0;
+            // Sem threads/futex robusto na fase 2 (mesmo raciocínio de NR_WAIT4: não há para
+            // onde a lista apontar) — glibc só REGISTRA o ponteiro, não valida o retorno.
+            case LinuxAbi.NR_SET_ROBUST_LIST -> 0;
+            case LinuxAbi.NR_GETRANDOM -> getrandom(a0, a1);
+            // Opcional (glibc/musl tratam ENOSYS como "kernel sem rseq"/"kernel sem statx" e
+            // caem para o caminho antigo silenciosamente, mesmo comportamento de um kernel real
+            // mais velho) — não implementados de propósito, não é o mesmo "não implementada"
+            // genérico do default (musl chama `statx` primeiro e refaz via `fstatat`+`stat64`
+            // internamente quando dá ENOSYS, sem expor isso ao chamador).
+            case LinuxAbi.NR_RSEQ, LinuxAbi.NR_STATX -> -LinuxAbi.ENOSYS;
+            case LinuxAbi.NR_CLOCK_GETTIME64 -> clockGettime64(a1);
             default -> {
                 hostLog.printf("armbox: syscall %d não implementada (ENOSYS)%n", number);
                 yield -LinuxAbi.ENOSYS;
@@ -439,5 +454,28 @@ public final class LinuxGuest {
         memory.write32(timevalAddress, (int) (millis / 1000));
         memory.write32(timevalAddress + 4, (int) (millis % 1000) * 1000);
         return 0;
+    }
+
+    /// `clock_gettime64` (y2038): mesmo campo de `clock_gettime`, mas `struct __kernel_timespec`
+    /// usa `tv_sec`/`tv_nsec` de 64 bits cada (16 bytes no total), não 32 bits.
+    private int clockGettime64(int timespecAddress) {
+        long nanos = System.nanoTime();
+        writeInt64(timespecAddress, nanos / 1_000_000_000L);
+        writeInt64(timespecAddress + 8, nanos % 1_000_000_000L);
+        return 0;
+    }
+
+    private void writeInt64(int address, long value) {
+        memory.write32(address, (int) value);
+        memory.write32(address + 4, (int) (value >> 32));
+    }
+
+    /// `getrandom`: preenche `count` bytes pseudo-aleatórios em `buffer` — suficiente para o uso
+    /// real (sementes de hash/stack canary), nenhum guest depende de entropia criptográfica.
+    private int getrandom(int buffer, int count) {
+        byte[] bytes = new byte[count];
+        RANDOM.nextBytes(bytes);
+        memory.writeBytes(buffer, bytes, 0, bytes.length);
+        return count;
     }
 }
