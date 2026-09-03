@@ -59,6 +59,9 @@
     </dependencies>
 
     <build>
+        <!-- Sem a versão no nome: `mvn package` produz `target/armbox.jar` (não
+             `armbox-1.0-SNAPSHOT.jar`), exatamente o que o README manda executar. -->
+        <finalName>armbox</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -76,6 +79,50 @@
                         </manifest>
                     </archive>
                 </configuration>
+            </plugin>
+            <!-- `java -jar target/armbox.jar` tem que funcionar sozinho: o jar do
+                 maven-jar-plugin não traz o arm-jitter nem o resto do classpath. O shade
+                 empacota TODAS as dependências de runtime num uber-jar executável e o
+                 grava por cima de `target/armbox.jar` (o jar fino vai para
+                 `original-armbox.jar`). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.3</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>dev.vitorsilverio.armbox.Main</mainClass>
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                                <!-- Truffle (arm-jitter-truffle / GraalVM) usa
+                                     META-INF/services — sem merge, só o último jar vence. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

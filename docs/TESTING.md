@@ -10,7 +10,7 @@ Não há toolchain glibc no Windows; os binários de teste usam **syscalls cruas
 
 ```powershell
 .\testdata\build-testdata.ps1   # gera testdata/hello.elf a partir de hello.s
-java -jar target/armbox-*.jar testdata/hello.elf   # → "hello from a real ELF", exit 42
+java -jar target/armbox.jar testdata/hello.elf   # → "hello from a real ELF", exit 42
 ```
 
 Os testes de integração também montam ELFs sintéticos em memória (instruções ARM
@@ -19,7 +19,7 @@ codificadas à mão em `ArmboxIntegrationTest`), então `mvn test` funciona sem 
 `testdata/busybox-armv5l` é o build estático oficial de busybox.net (musl, ARMv5L):
 
 ```powershell
-java -jar target/armbox-*.jar testdata/busybox-armv5l sh -c "echo a; echo b"
+java -jar target/armbox.jar testdata/busybox-armv5l sh -c "echo a; echo b"
 ```
 
 ## Binários ARMv6K
@@ -43,9 +43,9 @@ Java `ArmV6*Test`) e sai com um **código de saída único por checagem** (1-26)
 divergir; sucesso = exit 0.
 
 ```powershell
-java -jar target/armbox-*.jar --arch=armv6k testdata/armv6k-torture.elf   # exit 0, "armv6k torture: ok"
-java -jar target/armbox-*.jar --arch=armv6k --interp testdata/armv6k-torture.elf
-java -jar target/armbox-*.jar --arch=armv6k --check testdata/armv6k-torture.elf
+java -jar target/armbox.jar --arch=armv6k testdata/armv6k-torture.elf   # exit 0, "armv6k torture: ok"
+java -jar target/armbox.jar --arch=armv6k --interp testdata/armv6k-torture.elf
+java -jar target/armbox.jar --arch=armv6k --check testdata/armv6k-torture.elf
 ```
 
 `testdata/armv6k-torture-broken.s` é o "teste do teste": uma cópia mínima do mesmo
@@ -77,9 +77,9 @@ branches Thumb-1 de 16 bits (`B.W`/`BL.W` de 32 bits ainda não são decodificad
 este preset).
 
 ```powershell
-java -jar target/armbox-*.jar --arch=thumb2 testdata/thumb2-torture.elf   # exit 0, "thumb2 torture: ok"
-java -jar target/armbox-*.jar --arch=thumb2 --interp testdata/thumb2-torture.elf
-java -jar target/armbox-*.jar --arch=thumb2 --check testdata/thumb2-torture.elf
+java -jar target/armbox.jar --arch=thumb2 testdata/thumb2-torture.elf   # exit 0, "thumb2 torture: ok"
+java -jar target/armbox.jar --arch=thumb2 --interp testdata/thumb2-torture.elf
+java -jar target/armbox.jar --arch=thumb2 --check testdata/thumb2-torture.elf
 ```
 
 ## Binário de compilador Thumb-2 completo (ARMv7-A)
@@ -91,9 +91,9 @@ curtos). Roda com `--arch=armv7a` (não `--arch=thumb2` — o struct com bitfiel
 `UBFX`/`SBFX`, que só o preset `ARMV7A` decodifica em Thumb-2).
 
 ```powershell
-java -jar target/armbox-*.jar --arch=armv7a testdata/hello-thumb2.elf         # checksum hex + exit 0
-java -jar target/armbox-*.jar --arch=armv7a --interp testdata/hello-thumb2.elf
-java -jar target/armbox-*.jar --arch=armv7a --check testdata/hello-thumb2.elf
+java -jar target/armbox.jar --arch=armv7a testdata/hello-thumb2.elf         # checksum hex + exit 0
+java -jar target/armbox.jar --arch=armv7a --interp testdata/hello-thumb2.elf
+java -jar target/armbox.jar --arch=armv7a --check testdata/hello-thumb2.elf
 ```
 
 **Achado real desta task**: o preset público `ArmArchitecture.ARMV7A` (arm-jitter) tinha
@@ -132,9 +132,9 @@ ponteiro/valor de argumento) — implementado como um `BkptDispatcher` no arm-ji
 - `SYS_EXIT` (`0x18`): `R1` = código de saída do processo.
 
 ```powershell
-java -jar target/armbox-*.jar --arch=armv7m --machine=cortex-m testdata/cortexm-torture.elf   # exit 0
-java -jar target/armbox-*.jar --arch=armv6m --machine=cortex-m testdata/cortexm-torture-m0.elf
-java -jar target/armbox-*.jar --arch=armv7m --machine=cortex-m testdata/hello-cortexm.elf      # "hello cortex-m"
+java -jar target/armbox.jar --arch=armv7m --machine=cortex-m testdata/cortexm-torture.elf   # exit 0
+java -jar target/armbox.jar --arch=armv6m --machine=cortex-m testdata/cortexm-torture-m0.elf
+java -jar target/armbox.jar --arch=armv7m --machine=cortex-m testdata/hello-cortexm.elf      # "hello cortex-m"
 ```
 
 `testdata/cortexm-torture.s` (ARMv7-M, `-mcpu=cortex-m3`) e `testdata/cortexm-torture-m0.s`

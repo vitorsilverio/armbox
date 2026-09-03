@@ -15,8 +15,12 @@ b4.0-runner-user-mode.md`) e o veículo de validação das trilhas de arquitetur
 
 ```bash
 mvn package
-java -jar target/armbox-1.0-SNAPSHOT.jar [--arch=...] [--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] [--gdb=PORT] <elf|bin> [args...]
+java -jar target/armbox.jar [--arch=...] [--machine=linux-user|cortex-m] [--interp|--check] [--ram-size=N] [--gdb=PORT] <elf|bin> [args...]
 ```
+
+`mvn package` produz `target/armbox.jar` — um uber-jar executável, com o `arm-jitter` e
+todas as demais dependências de runtime embutidas (maven-shade-plugin). Não precisa montar
+classpath: `java -jar target/armbox.jar ...` roda sozinho.
 
 | Flag | Efeito |
 |------|--------|
@@ -47,11 +51,11 @@ Expõe o core como um stub GDB remote serial (`arm-jitter`'s `GdbServer`/`Gdb64S
 step e continue. Suportado em `--machine=linux-user`, tanto 32-bit quanto `--arch=aarch64`:
 
 ```bash
-java -jar target/armbox-*.jar --gdb=3333 testdata/hello.elf
+java -jar target/armbox.jar --gdb=3333 testdata/hello.elf
 # noutro terminal:
 arm-none-eabi-gdb testdata/hello.elf -ex "target remote :3333"
 
-java -jar target/armbox-*.jar --arch=aarch64 --gdb=3333 testdata/hello-aarch64.elf
+java -jar target/armbox.jar --arch=aarch64 --gdb=3333 testdata/hello-aarch64.elf
 aarch64-none-elf-gdb testdata/hello-aarch64.elf -ex "target remote :3333"
 ```
 
@@ -113,9 +117,9 @@ o `busybox` estático usado como corpus e as armadilhas encontradas:
 
 ```powershell
 .\testdata\build-testdata.ps1   # gera testdata/hello.elf a partir de hello.s
-java -jar target/armbox-*.jar testdata/hello.elf                        # exit 42
-java -jar target/armbox-*.jar testdata/busybox-armv5l sh -c "echo a; echo b"
-java -jar target/armbox-*.jar --arch=armv6k testdata/armv6k-torture.elf # exit 0
+java -jar target/armbox.jar testdata/hello.elf                        # exit 42
+java -jar target/armbox.jar testdata/busybox-armv5l sh -c "echo a; echo b"
+java -jar target/armbox.jar --arch=armv6k testdata/armv6k-torture.elf # exit 0
 ```
 
 ## Compilação
