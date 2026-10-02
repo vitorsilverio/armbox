@@ -30,8 +30,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 ///
 /// Esta task encontrou e corrigiu um bug REAL no arm-jitter (não no armbox): `VLDR`/`VSTR`/
 /// `VLDM`/`VSTM` com `Rn=PC` (o idioma padrão de literal pool do `gcc` para constantes
-/// `double`/`float`) não aplicava o viés arquitetural `PC+8` do ARM — `IrOp.VfpLoad`/`VfpStore`/
-/// `VfpMultipleTransfer` não tinham o campo `baseValueOverride` que `IrOp.Load`/`Store` já
+/// `double`/`float`) não aplicava o viés arquitetural `PC+8` do ARM — `VfpOp.Load`/`VfpOp.Store`/
+/// `VfpOp.MultipleTransfer` não tinham o campo `baseValueOverride` que `MemoryOp.Load`/`Store` já
 /// tinham para esse mesmo problema. Cada checagem se autoverifica e sai com um código de saída
 /// único se divergir; sucesso = exit 0.
 class Armv7TortureTest {
